@@ -122,7 +122,7 @@ func TestSingleNode(t *testing.T) {
 	registerNodeAndSetInferenceStatus(t, broker, node)
 
 	availableNode := make(chan *Node, 2)
-	queueMessage(t, broker, LockAvailableNode{"model1", availableNode})
+	queueMessage(t, broker, LockAvailableNode{Model: "model1", Response: availableNode})
 	runningNode := <-availableNode
 	if runningNode == nil {
 		t.Fatalf("expected node1, got nil")
@@ -130,7 +130,7 @@ func TestSingleNode(t *testing.T) {
 	if runningNode.Id != node.Id {
 		t.Fatalf("expected node1, got: " + runningNode.Id)
 	}
-	queueMessage(t, broker, LockAvailableNode{"model1", availableNode})
+	queueMessage(t, broker, LockAvailableNode{Model: "model1", Response: availableNode})
 	if <-availableNode != nil {
 		t.Fatalf("expected nil, got " + runningNode.Id)
 	}
@@ -201,7 +201,7 @@ func TestNodeRemoval(t *testing.T) {
 	registerNodeAndSetInferenceStatus(t, broker, node)
 
 	availableNode := make(chan *Node, 2)
-	queueMessage(t, broker, LockAvailableNode{"model1", availableNode})
+	queueMessage(t, broker, LockAvailableNode{Model: "model1", Response: availableNode})
 	runningNode := <-availableNode
 	if runningNode == nil {
 		t.Fatalf("expected node1, got nil")
@@ -214,7 +214,7 @@ func TestNodeRemoval(t *testing.T) {
 	if !<-release {
 		t.Fatalf("expected true, got false")
 	}
-	queueMessage(t, broker, LockAvailableNode{"model1", availableNode})
+	queueMessage(t, broker, LockAvailableNode{Model: "model1", Response: availableNode})
 	if <-availableNode != nil {
 		t.Fatalf("expected nil, got node")
 	}
@@ -234,7 +234,7 @@ func TestModelMismatch(t *testing.T) {
 	registerNodeAndSetInferenceStatus(t, broker, node)
 
 	availableNode := make(chan *Node, 2)
-	queueMessage(t, broker, LockAvailableNode{"model2", availableNode})
+	queueMessage(t, broker, LockAvailableNode{Model: "model2", Response: availableNode})
 	if <-availableNode != nil {
 		t.Fatalf("expected nil, got node1")
 	}
@@ -255,7 +255,7 @@ func TestHighConcurrency(t *testing.T) {
 
 	availableNode := make(chan *Node, 2)
 	for i := 0; i < 100; i++ {
-		queueMessage(t, broker, LockAvailableNode{"model1", availableNode})
+		queueMessage(t, broker, LockAvailableNode{Model: "model1", Response: availableNode})
 		if <-availableNode == nil {
 			t.Fatalf("expected node1, got nil")
 		}
@@ -284,7 +284,7 @@ func TestMultipleNodes(t *testing.T) {
 	registerNodeAndSetInferenceStatus(t, broker, node2)
 
 	availableNode := make(chan *Node, 2)
-	queueMessage(t, broker, LockAvailableNode{"model1", availableNode})
+	queueMessage(t, broker, LockAvailableNode{Model: "model1", Response: availableNode})
 	firstNode := <-availableNode
 	if firstNode == nil {
 		t.Fatalf("expected node1 or node2, got nil")
@@ -293,7 +293,7 @@ func TestMultipleNodes(t *testing.T) {
 	if firstNode.Id != node1.Id && firstNode.Id != node2.Id {
 		t.Fatalf("expected node1 or node2, got: " + firstNode.Id)
 	}
-	queueMessage(t, broker, LockAvailableNode{"model1", availableNode})
+	queueMessage(t, broker, LockAvailableNode{Model: "model1", Response: availableNode})
 	secondNode := <-availableNode
 	if secondNode == nil {
 		t.Fatalf("expected another node, got nil")
@@ -324,7 +324,7 @@ func TestReleaseNode(t *testing.T) {
 	registerNodeAndSetInferenceStatus(t, broker, node)
 
 	availableNode := make(chan *Node, 2)
-	queueMessage(t, broker, LockAvailableNode{"model1", availableNode})
+	queueMessage(t, broker, LockAvailableNode{Model: "model1", Response: availableNode})
 	runningNode := <-availableNode
 	require.NotNil(t, runningNode)
 	require.Equal(t, node.Id, runningNode.Id)
@@ -333,7 +333,7 @@ func TestReleaseNode(t *testing.T) {
 
 	b := <-release
 	require.True(t, b, "expected release response to be true")
-	queueMessage(t, broker, LockAvailableNode{"model1", availableNode})
+	queueMessage(t, broker, LockAvailableNode{Model: "model1", Response: availableNode})
 	require.NotNil(t, <-availableNode, "expected node1, got nil")
 }
 
@@ -352,7 +352,7 @@ func TestRoundTripSegment(t *testing.T) {
 	registerNodeAndSetInferenceStatus(t, broker, node)
 
 	availableNode := make(chan *Node, 2)
-	queueMessage(t, broker, LockAvailableNode{"model1", availableNode})
+	queueMessage(t, broker, LockAvailableNode{Model: "model1", Response: availableNode})
 	runningNode := <-availableNode
 	if runningNode == nil {
 		t.Fatalf("expected node1, got nil")
