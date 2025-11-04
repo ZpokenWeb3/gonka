@@ -3,6 +3,7 @@ package broker
 import (
 	"errors"
 	"fmt"
+	"net/http"
 )
 
 // ActionErrorKind classifies action failures taken under a node lock
@@ -44,23 +45,24 @@ func NewApplicationActionError(err error) *ActionError {
 	return &ActionError{Kind: ActionErrorApplication, Err: err}
 }
 
-// DoWithLockedNodeRetry locks a node supporting the requested model, runs the action, and
-// retries on transport-level failures. It skips nodes listed in skipNodeIDs and any nodes
-// that fail with transport errors during this call. On a transport failure it triggers a
-// node status query to refresh health.
-func DoWithLockedNodeRetry[T any](
+// DoWithLockedNodeHTTPRetry is a convenience helper for HTTP calls under a node lock.
+// It centralizes retry and status re-check logic:
+// - Transport errors (no HTTP response) trigger status re-check, node skip and retry.
+// - HTTP 5xx responses trigger status re-check, node skip and retry.
+// - HTTP 4xx responses are returned as-is without retry.
+// - 2xx responses are returned.
+func DoWithLockedNodeHTTPRetry(
 	b *Broker,
 	model string,
 	skipNodeIDs []string,
 	maxAttempts int,
-	action func(node *Node) (T, *ActionError),
-) (T, error) {
-	var zero T
+	doPost func(node *Node) (*http.Response, error),
+) (*http.Response, error) {
+	var zero *http.Response
 	if maxAttempts <= 0 {
 		maxAttempts = 1
 	}
 
-	// Build skip set and a slice we pass to the lock command
 	skip := make(map[string]struct{}, len(skipNodeIDs))
 	orderedSkip := make([]string, 0, len(skipNodeIDs))
 	for _, id := range skipNodeIDs {
@@ -90,51 +92,73 @@ func DoWithLockedNodeRetry[T any](
 			return zero, ErrNoNodesAvailable
 		}
 
-		// Skip unwanted nodes immediately
-		if _, shouldSkip := skip[node.Id]; shouldSkip {
-			// release with non-fatal error outcome
-			_ = b.QueueMessage(ReleaseNode{
-				NodeId:   node.Id,
-				Outcome:  InferenceError{Message: "skipped by DoWithLockedNodeRetry", IsFatal: false},
-				Response: make(chan bool, 2),
-			})
-			lastErr = fmt.Errorf("node %s skipped by policy", node.Id)
-			continue
+		resp, postErr := doPost(node)
+
+		// Decide outcome and retry policy
+		retry := false
+		triggerRecheck := false
+		fatal := false
+
+		if postErr != nil {
+			// Transport error: retry and recheck
+			retry = true
+			triggerRecheck = true
+			fatal = false
+			lastErr = fmt.Errorf("node %s transport failure: %w", node.Id, postErr)
+		} else if resp != nil {
+			if resp.StatusCode >= 500 {
+				// Server error: retry and recheck
+				retry = true
+				triggerRecheck = true
+				fatal = false
+				lastErr = fmt.Errorf("node %s server error: status=%d", node.Id, resp.StatusCode)
+			} else if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+				// 4xx or other non-success (non-retryable)
+				retry = false
+				triggerRecheck = false
+				fatal = true // request problem
+			}
 		}
 
-		// Execute action
-		value, aerr := action(node)
-
-		// Always release the lock
+		// Release lock with outcome immediately
 		var outcome InferenceResult
-		if aerr == nil {
+		if postErr == nil && resp != nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {
 			outcome = InferenceSuccess{Response: nil}
 		} else {
-			outcome = InferenceError{Message: aerr.Error(), IsFatal: aerr.Kind == ActionErrorApplication}
+			// Compose a concise message
+			msg := ""
+			if postErr != nil {
+				msg = postErr.Error()
+			} else if resp != nil {
+				msg = fmt.Sprintf("http status %d", resp.StatusCode)
+			} else {
+				msg = "unknown error"
+			}
+			outcome = InferenceError{Message: msg, IsFatal: fatal}
 		}
-		_ = b.QueueMessage(ReleaseNode{
-			NodeId:   node.Id,
-			Outcome:  outcome,
-			Response: make(chan bool, 2),
-		})
+		_ = b.QueueMessage(ReleaseNode{NodeId: node.Id, Outcome: outcome, Response: make(chan bool, 2)})
 
-		if aerr == nil {
-			return value, nil
-		}
-
-		// Transport failure: trigger status refresh, skip this node, and retry
-		if aerr.Kind == ActionErrorTransport {
-			b.TriggerStatusQuery()
+		if retry {
+			if triggerRecheck {
+				b.TriggerStatusQuery()
+			}
+			if resp != nil && resp.Body != nil {
+				// Ensure we don't leak the body before retrying
+				_ = resp.Body.Close()
+			}
 			if _, seen := skip[node.Id]; !seen {
 				skip[node.Id] = struct{}{}
 				orderedSkip = append(orderedSkip, node.Id)
 			}
-			lastErr = fmt.Errorf("node %s transport failure: %w", node.Id, aerr)
+			// Continue to next attempt
 			continue
 		}
 
-		// Non-transport failure: do not retry
-		return zero, aerr
+		// No retry: return
+		if postErr != nil {
+			return zero, postErr
+		}
+		return resp, nil
 	}
 
 	if lastErr != nil {
