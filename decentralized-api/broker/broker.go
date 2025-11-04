@@ -115,7 +115,7 @@ type Broker struct {
 	reconcileTrigger     chan struct{}
 	lastEpochIndex       uint64
 	lastEpochPhase       types.EpochPhase
-	statusQueryTrigger   chan struct{}
+	statusQueryTrigger   chan statusQuerySignal
 	configManager        *apiconfig.ConfigManager
 }
 
@@ -308,7 +308,7 @@ func NewBroker(chainBridge BrokerChainBridge, phaseTracker *chainphase.ChainPhas
 		callbackUrl:          callbackUrl,
 		mlNodeClientFactory:  clientFactory,
 		reconcileTrigger:     make(chan struct{}, 1),
-		statusQueryTrigger:   make(chan struct{}, 1),
+		statusQueryTrigger:   make(chan statusQuerySignal, 1),
 		configManager:        configManager,
 	}
 
@@ -324,9 +324,13 @@ func NewBroker(chainBridge BrokerChainBridge, phaseTracker *chainphase.ChainPhas
 	return broker
 }
 
-func (b *Broker) TriggerStatusQuery() {
+type statusQuerySignal struct {
+	BypassDebounce bool
+}
+
+func (b *Broker) TriggerStatusQuery(bypassDebounce bool) {
 	select {
-	case b.statusQueryTrigger <- struct{}{}:
+	case b.statusQueryTrigger <- statusQuerySignal{BypassDebounce: bypassDebounce}:
 	default: // Non-blocking send
 	}
 }
@@ -1146,15 +1150,17 @@ func nodeStatusQueryWorker(broker *Broker) {
 	defer ticker.Stop()
 
 	for {
+		bypassDebounce := false
 		select {
 		case <-ticker.C:
 			logging.Debug("nodeStatusQueryWorker triggered by ticker", types.Nodes)
-		case <-broker.statusQueryTrigger:
+		case sig := <-broker.statusQueryTrigger:
 			logging.Debug("nodeStatusQueryWorker triggered manually", types.Nodes)
+			bypassDebounce = sig.BypassDebounce
 		}
 
-		// Enforce minimal interval between scans regardless of trigger source
-		if !lastScanStart.IsZero() {
+		// Enforce minimal interval between scans unless bypass requested
+		if !bypassDebounce && !lastScanStart.IsZero() {
 			elapsed := time.Since(lastScanStart)
 			if elapsed < statusScanMinInterval {
 				logging.Debug("nodeStatusQueryWorker skipping scan due to min interval", types.Nodes, "elapsed", elapsed)

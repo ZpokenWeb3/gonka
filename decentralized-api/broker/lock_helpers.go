@@ -143,7 +143,7 @@ func DoWithLockedNodeHTTPRetry(
 
 		if retry {
 			if triggerRecheck {
-				b.TriggerStatusQuery()
+				b.TriggerStatusQuery(false)
 			}
 			if resp != nil && resp.Body != nil {
 				// Ensure we don't leak the body before retrying

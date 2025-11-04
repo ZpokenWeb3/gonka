@@ -103,7 +103,7 @@ func (c RegisterNode) Execute(b *Broker) {
 	}()
 
 	// Trigger a status check for the newly added node.
-	b.TriggerStatusQuery()
+	b.TriggerStatusQuery(true)
 
 	logging.Info("RegisterNode. Registered node", types.Nodes, "node", c.Node)
 	c.Response <- &c.Node
@@ -182,7 +182,7 @@ func (c UpdateNode) Execute(b *Broker) {
 	existing.Node = updated
 
 	// Optionally trigger a status re-check
-	b.TriggerStatusQuery()
+	b.TriggerStatusQuery(true)
 
 	logging.Info("UpdateNode. Updated node configuration", types.Nodes, "node_id", c.Node.Id)
 	c.Response <- &c.Node
