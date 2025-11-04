@@ -97,20 +97,17 @@ func DoWithLockedNodeHTTPRetry(
 		// Decide outcome and retry policy
 		retry := false
 		triggerRecheck := false
-		fatal := false
 
 		if aerr != nil {
 			if aerr.Kind == ActionErrorTransport {
 				// Transport error: retry and recheck
 				retry = true
 				triggerRecheck = true
-				fatal = false
 				lastErr = fmt.Errorf("node %s transport failure: %w", node.Id, aerr)
 			} else {
 				// Application error: do not retry
 				retry = false
 				triggerRecheck = false
-				fatal = true
 				lastErr = aerr
 			}
 		} else if resp != nil {
@@ -118,20 +115,18 @@ func DoWithLockedNodeHTTPRetry(
 				// Server error: retry and recheck
 				retry = true
 				triggerRecheck = true
-				fatal = false
 				lastErr = fmt.Errorf("node %s server error: status=%d", node.Id, resp.StatusCode)
 			} else if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 				// 4xx or other non-success (non-retryable)
 				retry = false
 				triggerRecheck = false
-				fatal = true // request problem
 			}
 		}
 
 		// Release lock with outcome immediately
 		var outcome InferenceResult
 		if aerr == nil && resp != nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			outcome = InferenceSuccess{Response: nil}
+			outcome = InferenceSuccess{}
 		} else {
 			// Compose a concise message
 			msg := ""
@@ -142,7 +137,7 @@ func DoWithLockedNodeHTTPRetry(
 			} else {
 				msg = "unknown error"
 			}
-			outcome = InferenceError{Message: msg, IsFatal: fatal}
+			outcome = InferenceError{Message: msg}
 		}
 		_ = b.QueueMessage(ReleaseNode{NodeId: node.Id, Outcome: outcome, Response: make(chan bool, 2)})
 

@@ -110,12 +110,10 @@ type InferenceResult interface {
 }
 
 type InferenceSuccess struct {
-	Response interface{}
 }
 
 type InferenceError struct {
 	Message string
-	IsFatal bool
 }
 
 func (i InferenceSuccess) IsSuccess() bool {

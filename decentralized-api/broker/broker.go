@@ -584,10 +584,8 @@ func LockNode[T any](
 
 	defer func() {
 		queueError := b.QueueMessage(ReleaseNode{
-			NodeId: node.Id,
-			Outcome: InferenceSuccess{
-				Response: nil,
-			},
+			NodeId:   node.Id,
+			Outcome:  InferenceSuccess{},
 			Response: make(chan bool, 2),
 		})
 
