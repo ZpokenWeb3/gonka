@@ -9,7 +9,6 @@ import (
 	"decentralized-api/logging"
 	"decentralized-api/utils"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -40,8 +39,7 @@ const (
 	BothContexts = TransferContext | ExecutorContext
 )
 
-// Sentinel error to identify transport-level POST failures to inference worker
-var errInferencePost = errors.New("inference post failed")
+// (unused) sentinel was replaced by broker.ActionError classification
 
 // Package-level variables for AuthKey reuse prevention
 var (
@@ -336,10 +334,10 @@ func (s *Server) getPromptTokenCount(text string, model string) (int, error) {
 		TokenCount int `json:"count"`
 	}
 
-	response, err := broker.LockNode(s.nodeBroker, model, func(node *broker.Node) (*http.Response, error) {
+	response, err := broker.DoWithLockedNodeRetry(s.nodeBroker, model, nil, 1, func(node *broker.Node) (*http.Response, *broker.ActionError) {
 		tokenizeUrl, err := url.JoinPath(node.InferenceUrlWithVersion(s.configManager.GetCurrentNodeVersion()), "/tokenize")
 		if err != nil {
-			return nil, err
+			return nil, broker.NewApplicationActionError(err)
 		}
 
 		reqBody := tokenizeRequest{
@@ -348,14 +346,18 @@ func (s *Server) getPromptTokenCount(text string, model string) (int, error) {
 		}
 		jsonData, err := json.Marshal(reqBody)
 		if err != nil {
-			return nil, err
+			return nil, broker.NewApplicationActionError(err)
 		}
 
-		return http.Post(
+		resp, postErr := http.Post(
 			tokenizeUrl,
 			"application/json",
 			bytes.NewReader(jsonData),
 		)
+		if postErr != nil {
+			return nil, broker.NewTransportActionError(postErr)
+		}
+		return resp, nil
 	})
 
 	if err != nil {
@@ -410,13 +412,13 @@ func (s *Server) handleExecutorRequest(ctx echo.Context, request *ChatRequest, w
 
 	logging.Info("Attempting to lock node for inference", types.Inferences,
 		"inferenceId", inferenceId, "nodeVersion", s.configManager.GetCurrentNodeVersion())
-	resp, err := broker.LockNode(s.nodeBroker, request.OpenAiRequest.Model, func(node *broker.Node) (*http.Response, error) {
+	resp, err := broker.DoWithLockedNodeRetry(s.nodeBroker, request.OpenAiRequest.Model, nil, 3, func(node *broker.Node) (*http.Response, *broker.ActionError) {
 		logging.Info("Successfully acquired node lock for inference", types.Inferences,
 			"inferenceId", inferenceId, "node", node.Id, "url", node.InferenceUrlWithVersion(s.configManager.GetCurrentNodeVersion()))
 
 		completionsUrl, err := url.JoinPath(node.InferenceUrlWithVersion(s.configManager.GetCurrentNodeVersion()), "/v1/chat/completions")
 		if err != nil {
-			return nil, err
+			return nil, broker.NewApplicationActionError(err)
 		}
 		resp, postErr := http.Post(
 			completionsUrl,
@@ -424,17 +426,11 @@ func (s *Server) handleExecutorRequest(ctx echo.Context, request *ChatRequest, w
 			bytes.NewReader(modifiedRequestBody.NewBody),
 		)
 		if postErr != nil {
-			return nil, fmt.Errorf("%w: %v", errInferencePost, postErr)
+			return nil, broker.NewTransportActionError(postErr)
 		}
 		return resp, nil
 	})
 	if err != nil {
-		if errors.Is(err, errInferencePost) {
-			logging.Warn("Transport error posting to inference worker; triggering manual node status query", types.Inferences,
-				"inferenceId", inferenceId, "error", err)
-			// Trigger a manual status query to refresh node health
-			s.nodeBroker.TriggerStatusQuery()
-		}
 		logging.Error("Failed to get response from inference node", types.Inferences,
 			"inferenceId", inferenceId, "error", err)
 		return err

@@ -471,8 +471,20 @@ func (b *Broker) getLeastBusyNode(command LockAvailableNode) *NodeWithState {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
+	// Build skip set
+	skip := make(map[string]struct{}, len(command.SkipNodeIDs))
+	for _, id := range command.SkipNodeIDs {
+		if id != "" {
+			skip[id] = struct{}{}
+		}
+	}
+
 	var leastBusyNode *NodeWithState = nil
 	for _, node := range b.nodes {
+		if _, shouldSkip := skip[node.Node.Id]; shouldSkip {
+			logging.Info("Node skipped by LockAvailableNode skip list", types.Nodes, "node_id", node.Node.Id)
+			continue
+		}
 		// TODO: log some kind of a reason as to why the node is not available
 		if available, reason := b.nodeAvailable(node, command.Model, epochState.LatestEpoch.EpochIndex, epochState.CurrentPhase); available {
 			if leastBusyNode == nil || node.State.LockCount < leastBusyNode.State.LockCount {
