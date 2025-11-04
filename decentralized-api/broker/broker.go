@@ -787,6 +787,9 @@ const reconciliationInterval = 30 * time.Second
 const (
 	nodeStatusRequestTimeout      = 5 * time.Second
 	inferenceHealthRequestTimeout = 5 * time.Second
+	// statusScanMinInterval enforces a minimal delay between consecutive full scans
+	// in nodeStatusQueryWorker, covering both manual and timer triggers.
+	statusScanMinInterval = 2 * time.Second
 )
 
 func (b *Broker) TriggerReconciliation() {
@@ -1127,6 +1130,8 @@ func (b *Broker) queryCurrentPoCParams(epochPoCStartHeight int64) (*pocParams, e
 
 func nodeStatusQueryWorker(broker *Broker) {
 	checkInterval := 60 * time.Second
+	// Track when an actual scan starts to enforce a minimal interval between scans
+	var lastScanStart time.Time
 	ticker := time.NewTicker(checkInterval)
 	defer ticker.Stop()
 
@@ -1137,6 +1142,17 @@ func nodeStatusQueryWorker(broker *Broker) {
 		case <-broker.statusQueryTrigger:
 			logging.Debug("nodeStatusQueryWorker triggered manually", types.Nodes)
 		}
+
+		// Enforce minimal interval between scans regardless of trigger source
+		if !lastScanStart.IsZero() {
+			elapsed := time.Since(lastScanStart)
+			if elapsed < statusScanMinInterval {
+				logging.Debug("nodeStatusQueryWorker skipping scan due to min interval", types.Nodes, "elapsed", elapsed)
+				continue
+			}
+		}
+		// Mark the start of an actual scan
+		lastScanStart = time.Now()
 
 		nodes, err := broker.GetNodes()
 		if err != nil {
