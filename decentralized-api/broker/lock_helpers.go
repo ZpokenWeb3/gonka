@@ -56,7 +56,7 @@ func DoWithLockedNodeHTTPRetry(
 	model string,
 	skipNodeIDs []string,
 	maxAttempts int,
-	doPost func(node *Node) (*http.Response, error),
+	doPost func(node *Node) (*http.Response, *ActionError),
 ) (*http.Response, error) {
 	var zero *http.Response
 	if maxAttempts <= 0 {
@@ -92,19 +92,27 @@ func DoWithLockedNodeHTTPRetry(
 			return zero, ErrNoNodesAvailable
 		}
 
-		resp, postErr := doPost(node)
+		resp, aerr := doPost(node)
 
 		// Decide outcome and retry policy
 		retry := false
 		triggerRecheck := false
 		fatal := false
 
-		if postErr != nil {
-			// Transport error: retry and recheck
-			retry = true
-			triggerRecheck = true
-			fatal = false
-			lastErr = fmt.Errorf("node %s transport failure: %w", node.Id, postErr)
+		if aerr != nil {
+			if aerr.Kind == ActionErrorTransport {
+				// Transport error: retry and recheck
+				retry = true
+				triggerRecheck = true
+				fatal = false
+				lastErr = fmt.Errorf("node %s transport failure: %w", node.Id, aerr)
+			} else {
+				// Application error: do not retry
+				retry = false
+				triggerRecheck = false
+				fatal = true
+				lastErr = aerr
+			}
 		} else if resp != nil {
 			if resp.StatusCode >= 500 {
 				// Server error: retry and recheck
@@ -122,13 +130,13 @@ func DoWithLockedNodeHTTPRetry(
 
 		// Release lock with outcome immediately
 		var outcome InferenceResult
-		if postErr == nil && resp != nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		if aerr == nil && resp != nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {
 			outcome = InferenceSuccess{Response: nil}
 		} else {
 			// Compose a concise message
 			msg := ""
-			if postErr != nil {
-				msg = postErr.Error()
+			if aerr != nil {
+				msg = aerr.Error()
 			} else if resp != nil {
 				msg = fmt.Sprintf("http status %d", resp.StatusCode)
 			} else {
@@ -155,8 +163,8 @@ func DoWithLockedNodeHTTPRetry(
 		}
 
 		// No retry: return
-		if postErr != nil {
-			return zero, postErr
+		if aerr != nil {
+			return zero, aerr
 		}
 		return resp, nil
 	}

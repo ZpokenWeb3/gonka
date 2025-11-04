@@ -334,10 +334,10 @@ func (s *Server) getPromptTokenCount(text string, model string) (int, error) {
 		TokenCount int `json:"count"`
 	}
 
-	response, err := broker.DoWithLockedNodeHTTPRetry(s.nodeBroker, model, nil, 1, func(node *broker.Node) (*http.Response, error) {
+	response, err := broker.DoWithLockedNodeHTTPRetry(s.nodeBroker, model, nil, 1, func(node *broker.Node) (*http.Response, *broker.ActionError) {
 		tokenizeUrl, err := url.JoinPath(node.InferenceUrlWithVersion(s.configManager.GetCurrentNodeVersion()), "/tokenize")
 		if err != nil {
-			return nil, err
+			return nil, broker.NewApplicationActionError(err)
 		}
 
 		reqBody := tokenizeRequest{
@@ -346,7 +346,7 @@ func (s *Server) getPromptTokenCount(text string, model string) (int, error) {
 		}
 		jsonData, err := json.Marshal(reqBody)
 		if err != nil {
-			return nil, err
+			return nil, broker.NewApplicationActionError(err)
 		}
 
 		resp, postErr := http.Post(
@@ -354,7 +354,10 @@ func (s *Server) getPromptTokenCount(text string, model string) (int, error) {
 			"application/json",
 			bytes.NewReader(jsonData),
 		)
-		return resp, postErr
+		if postErr != nil {
+			return nil, broker.NewTransportActionError(postErr)
+		}
+		return resp, nil
 	})
 
 	if err != nil {
@@ -409,20 +412,23 @@ func (s *Server) handleExecutorRequest(ctx echo.Context, request *ChatRequest, w
 
 	logging.Info("Attempting to lock node for inference", types.Inferences,
 		"inferenceId", inferenceId, "nodeVersion", s.configManager.GetCurrentNodeVersion())
-	resp, err := broker.DoWithLockedNodeHTTPRetry(s.nodeBroker, request.OpenAiRequest.Model, nil, 3, func(node *broker.Node) (*http.Response, error) {
+	resp, err := broker.DoWithLockedNodeHTTPRetry(s.nodeBroker, request.OpenAiRequest.Model, nil, 3, func(node *broker.Node) (*http.Response, *broker.ActionError) {
 		logging.Info("Successfully acquired node lock for inference", types.Inferences,
 			"inferenceId", inferenceId, "node", node.Id, "url", node.InferenceUrlWithVersion(s.configManager.GetCurrentNodeVersion()))
 
 		completionsUrl, err := url.JoinPath(node.InferenceUrlWithVersion(s.configManager.GetCurrentNodeVersion()), "/v1/chat/completions")
 		if err != nil {
-			return nil, err
+			return nil, broker.NewApplicationActionError(err)
 		}
 		resp, postErr := http.Post(
 			completionsUrl,
 			request.Request.Header.Get("Content-Type"),
 			bytes.NewReader(modifiedRequestBody.NewBody),
 		)
-		return resp, postErr
+		if postErr != nil {
+			return nil, broker.NewTransportActionError(postErr)
+		}
+		return resp, nil
 	})
 	if err != nil {
 		logging.Error("Failed to get response from inference node", types.Inferences,
