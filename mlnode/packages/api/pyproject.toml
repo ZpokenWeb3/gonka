@@ -37,7 +37,8 @@ markers = [
     "e2e: marks tests as end-to-end integration tests",
 ]
 # Default: skip slow tests unless explicitly requested
-addopts = "-v"
+addopts = "-v -s --log-cli-level=INFO"
+log_cli = true
 
 [build-system]
 requires = ["poetry-core"]
