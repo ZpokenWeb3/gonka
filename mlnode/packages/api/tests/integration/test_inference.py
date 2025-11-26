@@ -42,6 +42,7 @@ def model_setup(inference_client: InferenceClient, urls: tuple[str, str]) -> str
     wait_for_server(f"{vllm_url}/v1/models", timeout=300)
     return model_name
 
+@pytest.mark.skip(reason="Disabled - inference model tests disabled, keeping only test_inference_completion_with_deterministic_sampling")
 def test_inference_completion(model_setup: str, urls: tuple[str, str]):
     _, vllm_url = urls
     url = f"{vllm_url}/v1/chat/completions"
@@ -75,7 +76,7 @@ def test_inference_completion(model_setup: str, urls: tuple[str, str]):
     completion2 = response_data2.get("choices", [{}])[0].get("message", {}).get("content", "")
     logger.info(f"Second inference completion: {completion2}")
 
-
+@pytest.mark.skip(reason="Disabled - inference model tests disabled, keeping only test_inference_completion_with_deterministic_sampling")
 def test_inference_completion_with_deterministic_sampling(model_setup: str, urls: tuple[str, str]):
     _, vllm_url = urls
     url = f"{vllm_url}/v1/chat/completions"

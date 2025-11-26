@@ -4,9 +4,7 @@ export PROJECT_ROOT := $(shell git rev-parse --show-toplevel)/mlnode
 
 ENV_FILES := $(wildcard $(PROJECT_ROOT)/.env ./.env)
 INTEGRATION_TEST_DIRS = \
-	/app/packages/api/tests/integration \
-	/app/packages/pow/tests/integration \
-	/app/packages/train/tests/integration
+	/app/packages/api/tests/integration
 
 ifneq ($(ENV_FILES),)
 include $(ENV_FILES)

@@ -89,7 +89,6 @@ def generate_with_deterministic_sampling(
     return response.json()
 
 
-@pytest.mark.skip(reason="Disabled - inference model tests disabled, keeping only test_inference_completion_with_deterministic_sampling")
 @pytest.mark.e2e
 def test_deterministic_parameter_accepted(urls: tuple[str, str], model_setup: str, test_prompt: str):
     """Test that use_deterministic_hash parameter is accepted without errors."""
@@ -110,8 +109,6 @@ def test_deterministic_parameter_accepted(urls: tuple[str, str], model_setup: st
     
     logger.info("✅ use_deterministic_hash parameter is accepted")
 
-
-@pytest.mark.skip(reason="Disabled - inference model tests disabled, keeping only test_inference_completion_with_deterministic_sampling")
 @pytest.mark.e2e
 def test_deterministic_sampling_reproducibility(urls: tuple[str, str], model_setup: str, test_prompt: str):
     """
@@ -157,7 +154,6 @@ def test_deterministic_sampling_reproducibility(urls: tuple[str, str], model_set
     logger.info("✅ Deterministic sampling is 100% reproducible across multiple runs")
 
 
-@pytest.mark.skip(reason="Disabled - inference model tests disabled, keeping only test_inference_completion_with_deterministic_sampling")
 @pytest.mark.e2e
 def test_different_seeds_produce_different_outputs(urls: tuple[str, str], model_setup: str, test_prompt: str):
     """Test that different seeds produce different outputs."""
@@ -187,21 +183,19 @@ def test_different_seeds_produce_different_outputs(urls: tuple[str, str], model_
     
     logger.info("✅ Different seeds produce different outputs")
 
-
-@pytest.mark.skip(reason="Disabled - inference model tests disabled, keeping only test_inference_completion_with_deterministic_sampling")
 @pytest.mark.e2e
 def test_deterministic_vs_regular_sampling(urls: tuple[str, str], model_setup: str, test_prompt: str):
     """
     Compare deterministic and regular sampling.
-    
-    Note: Regular sampling with the same seed MAY produce the same output due to 
-    PyTorch's RNG, but this is not guaranteed across platforms. This test just 
+
+    Note: Regular sampling with the same seed MAY produce the same output due to
+    PyTorch's RNG, but this is not guaranteed across platforms. This test just
     verifies both modes work.
     """
     _, vllm_url = urls
     seed = 42
     temperature = 1.0
-    
+
     # Generate with deterministic sampling
     deterministic_output = generate_with_deterministic_sampling(
         vllm_url=vllm_url,
@@ -211,7 +205,7 @@ def test_deterministic_vs_regular_sampling(urls: tuple[str, str], model_setup: s
         temperature=temperature,
         use_deterministic=True
     )["choices"][0]["message"]["content"]
-    
+
     # Generate with regular sampling
     regular_output = generate_with_deterministic_sampling(
         vllm_url=vllm_url,
@@ -221,17 +215,15 @@ def test_deterministic_vs_regular_sampling(urls: tuple[str, str], model_setup: s
         temperature=temperature,
         use_deterministic=False
     )["choices"][0]["message"]["content"]
-    
+
     # Both should produce valid outputs
     assert len(deterministic_output) > 0
     assert len(regular_output) > 0
-    
+
     logger.info(f"Deterministic output: {deterministic_output[:50]}...")
     logger.info(f"Regular output: {regular_output[:50]}...")
     logger.info("✅ Both deterministic and regular sampling work")
 
-
-@pytest.mark.skip(reason="Disabled - inference model tests disabled, keeping only test_inference_completion_with_deterministic_sampling")
 @pytest.mark.e2e
 def test_deterministic_with_various_temperatures(urls: tuple[str, str], model_setup: str, test_prompt: str):
     """Test deterministic sampling works with different temperature values."""
@@ -263,7 +255,6 @@ def test_deterministic_with_various_temperatures(urls: tuple[str, str], model_se
         logger.info(f"✅ Temperature {temp}: reproducible")
 
 
-@pytest.mark.skip(reason="Disabled - inference model tests disabled, keeping only test_inference_completion_with_deterministic_sampling")
 @pytest.mark.e2e
 def test_backward_compatibility_without_parameter(urls: tuple[str, str], model_setup: str, test_prompt: str):
     """
@@ -295,8 +286,6 @@ def test_backward_compatibility_without_parameter(urls: tuple[str, str], model_s
     
     logger.info("✅ Backward compatibility maintained - existing API calls work without changes")
 
-
-@pytest.mark.skip(reason="Disabled - inference model tests disabled, keeping only test_inference_completion_with_deterministic_sampling")
 @pytest.mark.e2e
 def test_deterministic_sampling_with_logprobs(urls: tuple[str, str], model_setup: str, test_prompt: str):
     """Test that deterministic sampling produces identical logprobs."""
@@ -342,8 +331,6 @@ def test_deterministic_sampling_with_logprobs(urls: tuple[str, str], model_setup
     
     logger.info("✅ Deterministic sampling produces identical logprobs")
 
-
-@pytest.mark.skip(reason="Disabled - inference model tests disabled, keeping only test_inference_completion_with_deterministic_sampling")
 @pytest.mark.e2e
 def test_deterministic_sampling_with_longer_output(urls: tuple[str, str], model_setup: str):
     """Test deterministic sampling with longer sequences."""
