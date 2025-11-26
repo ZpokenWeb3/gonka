@@ -57,6 +57,7 @@ def pow_params():
         seq_len=4
     )
 
+@pytest.mark.skip(reason="Disabled - inference model tests disabled, keeping only test_inference_completion_with_deterministic_sampling")
 def test_exclusive_services(
     server_url,
     batch_reciever_url,

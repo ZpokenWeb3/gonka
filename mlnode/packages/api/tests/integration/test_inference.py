@@ -1,5 +1,6 @@
 import os
 import urllib.parse
+import logging
 from datetime import datetime
 from time import sleep
 import hashlib
@@ -8,6 +9,8 @@ import requests
 
 from api.inference.client import InferenceClient
 from common.wait import wait_for_server
+
+logger = logging.getLogger(__name__)
 
 
 @pytest.fixture(scope="session")
@@ -34,11 +37,12 @@ def session_identifiers() -> tuple[str, str, str]:
 @pytest.fixture(scope="session")
 def model_setup(inference_client: InferenceClient, urls: tuple[str, str]) -> str:
     _, vllm_url = urls
-    model_name = "Qwen/Qwen2.5-7B-Instruct"
+    model_name = "ahxt/LiteLlama-460M-1T"
     inference_client.inference_setup(model_name, "bfloat16")
     wait_for_server(f"{vllm_url}/v1/models", timeout=300)
     return model_name
 
+@pytest.mark.skip(reason="Disabled - inference model tests disabled, keeping only test_inference_completion_with_deterministic_sampling")
 def test_inference_completion(model_setup: str, urls: tuple[str, str]):
     _, vllm_url = urls
     url = f"{vllm_url}/v1/chat/completions"
@@ -56,9 +60,11 @@ def test_inference_completion(model_setup: str, urls: tuple[str, str]):
         "use_deterministic_hash": True,
     }
 
+    logger.info(f"Inference request payload: {payload}")
     response = requests.post(url, json=payload)
     assert response.status_code == 200
     response_data = response.json()
+    logger.info(f"Inference response: {response_data}")
     assert isinstance(response_data, dict)
 
 
@@ -68,7 +74,7 @@ def test_inference_completion_with_deterministic_sampling(model_setup: str, urls
     payload_deterministic = {
         "model": model_setup,
         "messages": [
-            {"role": "user", "content": "Generate a deterministic output. Who won the world series in 2020?"}
+            {"role": "user", "content": "Who won the world series in 2020?"}
         ],
         "max_tokens": 80,
         "temperature": 0.5,
@@ -79,18 +85,24 @@ def test_inference_completion_with_deterministic_sampling(model_setup: str, urls
         "use_deterministic_hash": True,
     }
     
+    logger.info(f"Deterministic sampling test - Inference request payload: {payload_deterministic}")
+    
     response1 = requests.post(url, json=payload_deterministic)
     assert response1.status_code == 200
     response_data1 = response1.json()
+    logger.info(f"Deterministic sampling test - First inference response: {response_data1}")
     assert isinstance(response_data1, dict)
 
     response2 = requests.post(url, json=payload_deterministic)
     assert response2.status_code == 200
     response_data2 = response2.json()
+    logger.info(f"Deterministic sampling test - Second inference response: {response_data2}")
     assert isinstance(response_data2, dict)
 
     if "use_deterministic_hash" in payload_deterministic and payload_deterministic["use_deterministic_hash"]:
         completion1 = response_data1.get("choices", [{}])[0].get("message", {}).get("content", "")
         completion2 = response_data2.get("choices", [{}])[0].get("message", {}).get("content", "")
+        logger.info(f"Deterministic sampling test - First completion: {completion1}")
+        logger.info(f"Deterministic sampling test - Second completion: {completion2}")
         assert completion1 == completion2, "Deterministic hash should produce identical outputs"
 

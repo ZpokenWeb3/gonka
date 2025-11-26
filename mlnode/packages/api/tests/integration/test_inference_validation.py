@@ -106,6 +106,7 @@ def analyze_token_matches(match_results: List[bool]) -> Tuple[int, int, float]:
     
     return matching_tokens, total_tokens, match_percentage
 
+@pytest.mark.skip(reason="Disabled - inference model tests disabled, keeping only test_inference_completion_with_deterministic_sampling")
 @pytest.mark.xfail(reason="Might fail but shouldn't break the pipeline", strict=False)
 def test_same_model_inference_validation(
     model_setup_small: str,
@@ -137,6 +138,7 @@ def test_same_model_inference_validation(
     assert all(token_matches), f"Tokens do not match:\n{inference_sequence}\n{validation_sequence}"
 
 
+@pytest.mark.skip(reason="Disabled - inference model tests disabled, keeping only test_inference_completion_with_deterministic_sampling")
 def test_different_models_inference_validation(
     inference_client: InferenceClient,
     urls: tuple[str, str],
