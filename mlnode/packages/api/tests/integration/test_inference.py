@@ -37,7 +37,7 @@ def session_identifiers() -> tuple[str, str, str]:
 @pytest.fixture(scope="session")
 def model_setup(inference_client: InferenceClient, urls: tuple[str, str]) -> str:
     _, vllm_url = urls
-    model_name = "ahxt/LiteLlama-460M-1T"
+    model_name = "unsloth/Llama-3.2-1B-Instruct"
     inference_client.inference_setup(model_name, "bfloat16")
     wait_for_server(f"{vllm_url}/v1/models", timeout=300)
     return model_name
