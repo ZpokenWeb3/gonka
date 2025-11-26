@@ -63,6 +63,17 @@ def test_inference_completion(model_setup: str, urls: tuple[str, str]):
     response_data = response.json()
     logger.info(f"Inference response: {response_data}")
     assert isinstance(response_data, dict)
+    
+    completion1 = response_data.get("choices", [{}])[0].get("message", {}).get("content", "")
+    logger.info(f"First inference completion: {completion1}")
+
+    response2 = requests.post(url, json=payload)
+    assert response2.status_code == 200
+    response_data2 = response2.json()
+    assert isinstance(response_data2, dict)
+    
+    completion2 = response_data2.get("choices", [{}])[0].get("message", {}).get("content", "")
+    logger.info(f"Second inference completion: {completion2}")
 
 
 def test_inference_completion_with_deterministic_sampling(model_setup: str, urls: tuple[str, str]):
@@ -86,14 +97,10 @@ def test_inference_completion_with_deterministic_sampling(model_setup: str, urls
     response1 = requests.post(url, json=payload_deterministic)
     assert response1.status_code == 200
     response_data1 = response1.json()
-    logger.info(f"Deterministic sampling test - First inference response: {response_data1}")
-    assert isinstance(response_data1, dict)
 
     response2 = requests.post(url, json=payload_deterministic)
     assert response2.status_code == 200
     response_data2 = response2.json()
-    logger.info(f"Deterministic sampling test - Second inference response: {response_data2}")
-    assert isinstance(response_data2, dict)
 
     if "use_deterministic_hash" in payload_deterministic and payload_deterministic["use_deterministic_hash"]:
         completion1 = response_data1.get("choices", [{}])[0].get("message", {}).get("content", "")
