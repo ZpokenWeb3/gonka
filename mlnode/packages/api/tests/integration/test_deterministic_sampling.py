@@ -51,7 +51,7 @@ def model_setup(inference_client: InferenceClient, urls: tuple[str, str]) -> str
 
 @pytest.fixture
 def test_prompt() -> str:
-    return "Count from 1 to 10 in words."
+    return "Write a detailed story about a mysterious discovery in an ancient library. Include character details, setting description, and plot development."
 
 
 def generate_with_deterministic_sampling(
