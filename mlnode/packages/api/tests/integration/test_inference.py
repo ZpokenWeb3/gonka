@@ -55,8 +55,6 @@ def test_inference_completion(model_setup: str, urls: tuple[str, str]):
         "seed": 42,
         "stream": False,
         "logprobs": 1,
-        "top_logprobs": 3,
-        "use_deterministic_hash": True,
     }
 
     logger.info(f"Inference request payload: {payload}")
@@ -80,7 +78,6 @@ def test_inference_completion_with_deterministic_sampling(model_setup: str, urls
         "seed": 42,
         "stream": False,
         "logprobs": 1,
-        "top_logprobs": 3,
         "use_deterministic_hash": True,
     }
     
