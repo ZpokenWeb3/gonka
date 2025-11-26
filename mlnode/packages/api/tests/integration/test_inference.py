@@ -42,7 +42,6 @@ def model_setup(inference_client: InferenceClient, urls: tuple[str, str]) -> str
     wait_for_server(f"{vllm_url}/v1/models", timeout=300)
     return model_name
 
-@pytest.mark.skip(reason="Disabled - inference model tests disabled, keeping only test_inference_completion_with_deterministic_sampling")
 def test_inference_completion(model_setup: str, urls: tuple[str, str]):
     _, vllm_url = urls
     url = f"{vllm_url}/v1/chat/completions"
@@ -74,7 +73,7 @@ def test_inference_completion_with_deterministic_sampling(model_setup: str, urls
     payload_deterministic = {
         "model": model_setup,
         "messages": [
-            {"role": "user", "content": "Who won the world series in 2020?"}
+            {"role": "user", "content": "Who won the world series in 2020? Generate a funny and original text"}
         ],
         "max_tokens": 80,
         "temperature": 0.5,
