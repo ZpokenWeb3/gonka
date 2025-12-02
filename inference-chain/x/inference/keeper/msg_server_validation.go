@@ -2,8 +2,11 @@ package keeper
 
 import (
 	"context"
+	"encoding/json"
 	"math"
 	"strconv"
+	errorsmod "cosmossdk.io/errors"
+	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 
 	"cosmossdk.io/collections"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -23,10 +26,6 @@ func (k msgServer) Validation(goCtx context.Context, msg *types.MsgValidation) (
 		"inferenceId", msg.InferenceId)
 
 	ctx := sdk.UnwrapSDKContext(goCtx)
-
-	if msg.ResponsePayload != "" {
-		return nil, types.ErrValidationPayloadDeprecated
-	}
 
 	creator, found := k.GetParticipant(ctx, msg.Creator)
 	if !found {
@@ -78,7 +77,39 @@ func (k msgServer) Validation(goCtx context.Context, msg *types.MsgValidation) (
 	}
 	passValue := model.ValidationThreshold.ToFloat()
 
-	passed := msg.Value > passValue
+	// Optional Stage-1 Sequence Check: if the validator included an artifact
+	// payload in `msg.ResponsePayload`, attempt to parse and verify it.
+	// This is intentionally pluggable/off-by-default: validators may omit
+	// artifact payloads and the check will be skipped. The canonical
+	// `user_seed` is taken from `types.RandomSeed.Signature` for the
+	// inference executor when available.
+	sequenceOk := true
+	if msg.ResponsePayload != "" {
+		var artifact ArtifactLite
+		if err := json.Unmarshal([]byte(msg.ResponsePayload), &artifact); err != nil {
+			k.LogError("Failed to parse ResponsePayload as artifact", types.Validation, "error", err)
+			return nil, errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "invalid response_payload")
+		}
+		// Try to fetch the random seed for the executor for this inference's epoch.
+		if seed, found := k.GetRandomSeed(ctx, inference.EpochId, inference.ExecutedBy); found {
+			runSeed := GenerateRunSeed(seed.Signature, inference.InferenceId)
+			ok, err := SequenceCheck(artifact, runSeed)
+			if err != nil {
+				k.LogError("SequenceCheck error", types.Validation, "error", err)
+				return nil, err
+			}
+			if !ok {
+				k.LogInfo("SequenceCheck failed", types.Validation, "inferenceId", inference.InferenceId, "validator", msg.Creator)
+				sequenceOk = false
+			} else {
+				k.LogInfo("SequenceCheck passed", types.Validation, "inferenceId", inference.InferenceId, "validator", msg.Creator)
+			}
+		} else {
+			k.LogWarn("Random seed not found for executor; skipping SequenceCheck", types.Validation, "inferenceId", inference.InferenceId, "executor", inference.ExecutedBy)
+		}
+	}
+
+	passed := (msg.Value > passValue) && sequenceOk
 	k.LogInfo(
 		"Validation details", types.Validation,
 		"passValue", passValue,
