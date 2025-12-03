@@ -2,7 +2,6 @@ package keeper
 
 import (
 	"context"
-	"encoding/json"
 	"math"
 	"strconv"
 	errorsmod "cosmossdk.io/errors"
@@ -77,19 +76,33 @@ func (k msgServer) Validation(goCtx context.Context, msg *types.MsgValidation) (
 	}
 	passValue := model.ValidationThreshold.ToFloat()
 
-	// Optional Stage-1 Sequence Check: if the validator included an artifact
-	// payload in `msg.ResponsePayload`, attempt to parse and verify it.
-	// This is intentionally pluggable/off-by-default: validators may omit
-	// artifact payloads and the check will be skipped. The canonical
-	// `user_seed` is taken from `types.RandomSeed.Signature` for the
-	// inference executor when available.
+	// Stage 0: Distribution check (primary validation)
+	distributionPassed := msg.Value > passValue
+
+	// Stage 1: Sequence Check (cheap deterministic validation)
+	// This runs AFTER distribution check to avoid wasting compute on
+	// obviously invalid inferences. Top-k logprobs are stored on-chain
+	// when the inference completes (FinishInference handler).
 	sequenceOk := true
-	if msg.ResponsePayload != "" {
-		var artifact ArtifactLite
-		if err := json.Unmarshal([]byte(msg.ResponsePayload), &artifact); err != nil {
-			k.LogError("Failed to parse ResponsePayload as artifact", types.Validation, "error", err)
-			return nil, errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "invalid response_payload")
+	if validationDetails, found := k.GetInferenceValidationDetails(ctx, inference.EpochId, inference.InferenceId); found && len(validationDetails.Positions) > 0 {
+		// Convert stored positions to ArtifactLite format for SequenceCheck
+		artifact := ArtifactLite{
+			Positions: make([]PositionData, 0, len(validationDetails.Positions)),
 		}
+		for _, pos := range validationDetails.Positions {
+			topK := make([]TokenLogprob, 0, len(pos.TopK))
+			for _, tl := range pos.TopK {
+				topK = append(topK, TokenLogprob{
+					Token:   tl.Token,
+					Logprob: tl.Logprob,
+				})
+			}
+			artifact.Positions = append(artifact.Positions, PositionData{
+				TopK:        topK,
+				ChosenToken: pos.ChosenToken,
+			})
+		}
+
 		// Try to fetch the random seed for the executor for this inference's epoch.
 		if seed, found := k.GetRandomSeed(ctx, inference.EpochId, inference.ExecutedBy); found {
 			runSeed := GenerateRunSeed(seed.Signature, inference.InferenceId)
@@ -107,9 +120,11 @@ func (k msgServer) Validation(goCtx context.Context, msg *types.MsgValidation) (
 		} else {
 			k.LogWarn("Random seed not found for executor; skipping SequenceCheck", types.Validation, "inferenceId", inference.InferenceId, "executor", inference.ExecutedBy)
 		}
+	} else {
+		k.LogDebug("No validation details or positions found; skipping SequenceCheck", types.Validation, "inferenceId", inference.InferenceId)
 	}
 
-	passed := (msg.Value > passValue) && sequenceOk
+	passed := distributionPassed && sequenceOk
 	k.LogInfo(
 		"Validation details", types.Validation,
 		"passValue", passValue,

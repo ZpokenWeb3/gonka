@@ -398,10 +398,39 @@ func (s *Server) handleExecutorRequest(ctx echo.Context, request *ChatRequest, w
 		return echo.ErrBadRequest
 	}
 
+	// Stage-1 Sequence Check: Get executor's random seed for deterministic sampling
+	userSeed, err := s.GetExecutorRandomSeed(ctx.Request().Context(), s.recorder.GetAccountAddress())
+	if err != nil {
+		logging.Warn("Failed to get random seed for executor (non-fatal)", types.Inferences, "error", err)
+	}
+
+	// Generate run_seed for deterministic sampling if user_seed is available
+	var runSeed string
+	if userSeed != "" {
+		runSeed = GenerateRunSeed(userSeed, inferenceId)
+		logging.Info("Generated run_seed for deterministic sampling", types.Inferences,
+			"inferenceId", inferenceId,
+			"runSeedPrefix", runSeed[:16]+"...")
+	}
+
 	modifiedRequestBody, err := completionapi.ModifyRequestBody(request.Body, int32(seed))
 	if err != nil {
 		logging.Warn("Unable to modify request body", types.Inferences, "error", err)
 		return err
+	}
+
+	// Add deterministic sampling parameters if run_seed is available
+	if runSeed != "" {
+		modifiedRequestBody.NewBody, err = PrepareVLLMRequestForSequenceCheck(
+			modifiedRequestBody.NewBody,
+			inferenceId,
+			runSeed,
+		)
+		if err != nil {
+			logging.Warn("Failed to add deterministic sampling params (non-fatal)", types.Inferences,
+				"inferenceId", inferenceId,
+				"error", err)
+		}
 	}
 
 	logging.Info("Attempting to lock node for inference", types.Inferences,

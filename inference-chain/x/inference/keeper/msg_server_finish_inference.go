@@ -194,6 +194,25 @@ func (k msgServer) handleInferenceCompleted(ctx sdk.Context, existingInference *
 		TotalPower:           uint64(modelEpochGroup.GroupData.TotalWeight),
 		CreatedAtBlockHeight: ctx.BlockHeight(),
 	}
+
+	// Parse vLLM response to extract top-k logprobs for Stage-1 Sequence Check
+	positions, err := parseVLLMLogprobs(existingInference.ResponsePayload)
+	if err != nil {
+		k.LogWarn("Failed to parse vLLM logprobs", types.Validation,
+			"inference_id", existingInference.InferenceId,
+			"err", err,
+		)
+		// Non-critical error: validation can still happen with distribution check only
+	} else if positions != nil {
+		inferenceDetails.Positions = positions
+		k.LogDebug(
+			"Parsed vLLM logprobs",
+			types.Validation,
+			"inference_id", existingInference.InferenceId,
+			"positions_count", len(positions),
+		)
+	}
+
 	if inferenceDetails.TotalPower == inferenceDetails.ExecutorPower {
 		k.LogWarn("Executor Power equals Total Power", types.Validation,
 			"model", existingInference.Model,
