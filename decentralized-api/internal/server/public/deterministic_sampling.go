@@ -72,10 +72,10 @@ func (s *Server) GetExecutorRandomSeed(ctx context.Context, executorAddress stri
 
 // PrepareVLLMRequestForSequenceCheck adds deterministic sampling parameters to vLLM request.
 // This enables Stage-1 Sequence Check validation by:
-// 1. Setting use_deterministic_hash=true (uses SHA256-based RNG in vLLM fork)
-// 2. Setting seed=run_seed (derived from executor's RandomSeed.Signature)
-// 3. Enabling logprobs=true, top_logprobs=5 for on-chain storage
+// 1. Setting deterministic_seed=run_seed (full hex string, 64 chars)
+// 2. Enabling logprobs=true, top_logprobs=5 for on-chain storage
 //
+// vLLM will use enforced type: concatenate seed with position and use as binary seed.
 // Returns modified request body with deterministic sampling enabled.
 func PrepareVLLMRequestForSequenceCheck(requestBody []byte, inferenceId string, runSeed string) ([]byte, error) {
 	if runSeed == "" {
@@ -90,25 +90,15 @@ func PrepareVLLMRequestForSequenceCheck(requestBody []byte, inferenceId string, 
 		return nil, fmt.Errorf("failed to parse request body: %w", err)
 	}
 
-	// Convert hex run_seed to integer for vLLM seed parameter
-	// Take first 8 hex chars (32 bits) to fit in int32
-	seedHex := runSeed
-	if len(seedHex) > 8 {
-		seedHex = seedHex[:8]
-	}
-	var seedInt int64
-	fmt.Sscanf(seedHex, "%x", &seedInt)
-
 	// Add deterministic sampling parameters
-	req["seed"] = int32(seedInt)
-	req["use_deterministic_hash"] = true
+	// Pass full hex run_seed (64 chars) as deterministic_seed string
+	req["deterministic_seed"] = runSeed
 	req["logprobs"] = true
 	req["top_logprobs"] = 5
 
 	logging.Info("Enabled deterministic sampling for inference", types.Inferences,
 		"inferenceId", inferenceId,
-		"seed", seedInt,
-		"run_seed_hex", runSeed[:16]+"...") // Log first 16 chars for debugging
+		"deterministic_seed", runSeed[:16]+"...") // Log first 16 chars for debugging
 
 	modifiedBody, err := json.Marshal(req)
 	if err != nil {
