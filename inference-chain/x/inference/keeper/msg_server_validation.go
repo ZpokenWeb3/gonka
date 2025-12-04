@@ -103,9 +103,9 @@ func (k msgServer) Validation(goCtx context.Context, msg *types.MsgValidation) (
 			})
 		}
 
-		// Try to fetch the random seed for the executor for this inference's epoch.
-		if seed, found := k.GetRandomSeed(ctx, inference.EpochId, inference.ExecutedBy); found {
-			runSeed := GenerateRunSeed(seed.Signature, inference.InferenceId)
+			// Try to fetch user_seed for deterministic sampling
+			// Per proposal: user_seed is from developer's API request (e.g., seed: 42)
+			runSeed := GenerateRunSeed(validationDetails.UserSeed, inference.InferenceId)
 			ok, err := SequenceCheck(artifact, runSeed)
 			if err != nil {
 				k.LogError("SequenceCheck error", types.Validation, "error", err)

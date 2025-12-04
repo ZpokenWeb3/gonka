@@ -13,61 +13,22 @@ import (
 
 // GenerateRunSeed generates a deterministic run seed for Stage-1 Sequence Check validation.
 // Formula: run_seed = SHA256(user_seed || inference_id)
-// where user_seed is RandomSeed.Signature for the executor in the current epoch.
-func GenerateRunSeed(userSeed, inferenceId string) string {
+// where user_seed is the seed provided by developer in the API request (e.g., seed: 42).
+// Per proposal: https://github.com/ZpokenWeb3/gonka/blob/main/proposals/inference-validation/inference-validation.md
+func GenerateRunSeed(userSeed int64, inferenceId string) string {
 	h := sha256.New()
-	h.Write([]byte(userSeed))
+	h.Write([]byte(fmt.Sprintf("%d", userSeed)))
 	h.Write([]byte(inferenceId))
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// GetExecutorRandomSeed fetches the executor's RandomSeed.Signature from the chain
-// for the current effective epoch. Returns empty string if not found (non-fatal).
-func (s *Server) GetExecutorRandomSeed(ctx context.Context, executorAddress string) (string, error) {
-	queryClient := s.recorder.NewInferenceQueryClient()
-
-	// Get current effective epoch
-	epochResp, err := queryClient.EffectiveEpoch(ctx, &types.QueryEffectiveEpochRequest{})
-	if err != nil {
-		logging.Warn("Failed to get effective epoch for random seed", types.Inferences,
-			"executor", executorAddress,
-			"error", err)
-		return "", nil // Non-fatal: validation can still work without sequence check
+// ExtractUserSeedFromRequest extracts the seed from the OpenAI request.
+// Returns the seed value, or 0 if not provided (default value per proposal).
+func ExtractUserSeedFromRequest(openAiRequest *ChatCompletionRequest) int64 {
+	if openAiRequest.Seed != nil {
+		return int64(*openAiRequest.Seed)
 	}
-
-	if epochResp.Epoch == nil {
-		logging.Warn("No effective epoch found", types.Inferences, "executor", executorAddress)
-		return "", nil
-	}
-
-	epochId := epochResp.Epoch.Index
-
-	// Get RandomSeed for executor in this epoch
-	seedResp, err := queryClient.RandomSeed(ctx, &types.QueryRandomSeedRequest{
-		EpochId:       epochId,
-		ParticipantId: executorAddress,
-	})
-
-	if err != nil {
-		logging.Debug("Random seed not found for executor (non-fatal)", types.Inferences,
-			"executor", executorAddress,
-			"epoch", epochId,
-			"error", err)
-		return "", nil // Non-fatal: executor may not have submitted seed yet
-	}
-
-	if seedResp.Seed == nil || seedResp.Seed.Signature == "" {
-		logging.Debug("Empty random seed for executor", types.Inferences,
-			"executor", executorAddress,
-			"epoch", epochId)
-		return "", nil
-	}
-
-	logging.Info("Retrieved random seed for deterministic sampling", types.Inferences,
-		"executor", executorAddress,
-		"epoch", epochId)
-
-	return seedResp.Seed.Signature, nil
+	return 0 // Default user_seed when not provided
 }
 
 // PrepareVLLMRequestForSequenceCheck adds deterministic sampling parameters to vLLM request.

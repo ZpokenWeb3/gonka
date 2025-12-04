@@ -8,6 +8,7 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/productscience/inference/x/inference/calculations"
 	"github.com/productscience/inference/x/inference/types"
+	"encoding/json"
 )
 
 func (k msgServer) FinishInference(goCtx context.Context, msg *types.MsgFinishInference) (*types.MsgFinishInferenceResponse, error) {
@@ -134,6 +135,23 @@ func getFinishSignatureComponents(msg *types.MsgFinishInference) calculations.Si
 	}
 }
 
+
+// extractUserSeedFromPromptPayload parses the OpenAI API request JSON
+// to extract the seed parameter provided by the developer.
+// Returns 0 if seed is not present (default value).
+func extractUserSeedFromPromptPayload(promptPayload string) int64 {
+var req struct {
+Seed *int64 \`json:"seed"\`
+}
+if err := json.Unmarshal([]byte(promptPayload), &req); err != nil {
+return 0 // Default if parsing fails
+}
+if req.Seed != nil {
+return *req.Seed
+}
+return 0 // Default if not provided
+}
+
 func (k msgServer) handleInferenceCompleted(ctx sdk.Context, existingInference *types.Inference) error {
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
@@ -205,6 +223,9 @@ func (k msgServer) handleInferenceCompleted(ctx sdk.Context, existingInference *
 		// Non-critical error: validation can still happen with distribution check only
 	} else if positions != nil {
 		inferenceDetails.Positions = positions
+		// Extract user_seed from prompt payload for Stage-1 Sequence Check
+		userSeed := extractUserSeedFromPromptPayload(existingInference.PromptPayload)
+		inferenceDetails.UserSeed = userSeed
 		k.LogDebug(
 			"Parsed vLLM logprobs",
 			types.Validation,

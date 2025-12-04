@@ -29,4 +29,9 @@ message InferenceValidationDetails {
   // Top-k logprobs data for Stage-1 Sequence Check validation
   // Populated from vLLM response: choices[].logprobs.content[].top_logprobs[]
   repeated PositionLogprobs positions = 10;
+  
+  // User seed from developer's API request (e.g., seed: 42)
+  // Used to compute run_seed = SHA256(user_seed || inference_id)
+  // Per proposal: https://github.com/ZpokenWeb3/gonka/blob/main/proposals/inference-validation/inference-validation.md
+  int64 user_seed = 11;
 }

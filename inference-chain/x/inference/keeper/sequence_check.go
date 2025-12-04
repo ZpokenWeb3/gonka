@@ -2,6 +2,7 @@ package keeper
 
 import (
     "crypto/sha256"
+    "fmt"
     "encoding/binary"
     "errors"
     "math/big"
@@ -35,14 +36,16 @@ type ArtifactLite struct {
 
 // GenerateRunSeed computes run_seed = SHA256(userSeed || inferenceId)
 // where `userSeed` should be `types.RandomSeed.Signature` (string).
-func GenerateRunSeed(userSeed string, inferenceId string) []byte {
-    h := sha256.New()
-    h.Write([]byte(userSeed))
-    h.Write([]byte(inferenceId))
-    return h.Sum(nil)
-}
-
-// sampleIndexForPosition deterministically samples an index in [0, topKLen)
+// GenerateRunSeed generates a deterministic run seed for Stage-1 Sequence Check validation.
+// Formula: run_seed = SHA256(user_seed || inference_id)
+// where user_seed is the seed provided by developer in the API request (e.g., seed: 42).
+// Per proposal: https://github.com/ZpokenWeb3/gonka/blob/main/proposals/inference-validation/inference-validation.md
+func GenerateRunSeed(userSeed int64, inferenceId string) []byte {
+	h := sha256.New()
+	h.Write([]byte(fmt.Sprintf("%d", userSeed)))
+	h.Write([]byte(inferenceId))
+	return h.Sum(nil)
+}// sampleIndexForPosition deterministically samples an index in [0, topKLen)
 // using seed_i = SHA256(runSeed || position) and then taking seed_i mod topKLen.
 // This avoids PRNG state and is fully reproducible across platforms.
 func sampleIndexForPosition(runSeed []byte, position uint64, topKLen int) (int, error) {

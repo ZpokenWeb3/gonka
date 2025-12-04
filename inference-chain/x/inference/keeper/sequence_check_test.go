@@ -5,7 +5,7 @@ import (
 )
 
 func TestSequenceCheck_ValidArtifact(t *testing.T) {
-    userSeed := "usersig-abc"
+    userSeed := int64(42)
     inferenceId := "inf-123"
     runSeed := GenerateRunSeed(userSeed, inferenceId)
 
@@ -34,7 +34,7 @@ func TestSequenceCheck_ValidArtifact(t *testing.T) {
 }
 
 func TestSequenceCheck_TamperedChosen(t *testing.T) {
-    userSeed := "usersig-abc"
+    userSeed := int64(42)
     inferenceId := "inf-123"
     runSeed := GenerateRunSeed(userSeed, inferenceId)
 
@@ -52,7 +52,7 @@ func TestSequenceCheck_TamperedChosen(t *testing.T) {
 }
 
 func TestSequenceCheck_EmptyTopK(t *testing.T) {
-    runSeed := GenerateRunSeed("u", "i")
+    runSeed := GenerateRunSeed(0, "i")
     art := ArtifactLite{Positions: []ArtifactPosition{{TopK: []string{}, Chosen: "x"}}}
     _, err := SequenceCheck(art, runSeed)
     if err == nil {
