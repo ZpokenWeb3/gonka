@@ -77,6 +77,7 @@ def inference(
         "top_logprobs": request_params.top_logprobs,
         "skip_special_tokens": False,
         "repetition_penalty": 1.2,
+        "chat_template": "{% for message in messages %}{{ message.content }}{% endfor %}",
     }
     
     response = requests.post(url, json=payload)
@@ -105,6 +106,7 @@ def validation(
         "n": 1,
         "skip_special_tokens": False,
         "repetition_penalty": 1.2,
+        "chat_template": "{% for message in messages %}{{ message.content }}{% endfor %}",
     }
     
     if enforced_str:
