@@ -4,7 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "benchmarks" / "src"))
 
-from validation.utils import generate_and_validate
+from validation.utils import generate_and_validate, verify_artifacts
 from validation.data import ModelInfo, RequestParams, ExperimentRequest
 
 
@@ -45,6 +45,7 @@ class TestDeterministicSampling:
         )
         result = generate_and_validate(experiment)
         assert result.inference_result.text == result.validation_result.text
+        assert verify_artifacts(result.inference_result, result.validation_result)
 
     def test_temperature_sampling_low(self):
         experiment = create_experiment_request(
@@ -55,6 +56,7 @@ class TestDeterministicSampling:
         )
         result = generate_and_validate(experiment)
         assert result.inference_result.text == result.validation_result.text
+        assert verify_artifacts(result.inference_result, result.validation_result)
 
     def test_temperature_sampling_medium(self):
         experiment = create_experiment_request(
@@ -65,6 +67,7 @@ class TestDeterministicSampling:
         )
         result = generate_and_validate(experiment)
         assert result.inference_result.text == result.validation_result.text
+        assert verify_artifacts(result.inference_result, result.validation_result)
 
     def test_temperature_sampling_high(self):
         experiment = create_experiment_request(
@@ -75,26 +78,28 @@ class TestDeterministicSampling:
         )
         result = generate_and_validate(experiment)
         assert result.inference_result.text == result.validation_result.text
+        assert verify_artifacts(result.inference_result, result.validation_result)
 
-    def test_same_seed_produces_deterministic_output(self):
-        prompt = "Hello world"
-        experiment1 = create_experiment_request(prompt=prompt, seed=42, temperature=0.7, max_tokens=20)
-        experiment2 = create_experiment_request(prompt=prompt, seed=42, temperature=0.7, max_tokens=20)
-        
-        result1 = generate_and_validate(experiment1)
-        result2 = generate_and_validate(experiment2)
-        
-        assert result1.inference_result.text == result2.inference_result.text
-        assert result1.validation_result.text == result2.validation_result.text
+    def test_inference_and_validation_match(self):
+        experiment = create_experiment_request(
+            prompt="Hello world",
+            seed=42,
+            temperature=0.7,
+            max_tokens=20
+        )
+        result = generate_and_validate(experiment)
+
+        assert result.inference_result.text == result.validation_result.text
+        assert verify_artifacts(result.inference_result, result.validation_result)
 
     def test_different_seeds_produce_different_output(self):
         prompt = "The weather today"
         experiment1 = create_experiment_request(prompt=prompt, seed=111, temperature=0.7, max_tokens=20)
         experiment2 = create_experiment_request(prompt=prompt, seed=222, temperature=0.7, max_tokens=20)
-        
+
         result1 = generate_and_validate(experiment1)
         result2 = generate_and_validate(experiment2)
-        
+
         assert result1.inference_result.text != result2.inference_result.text
 
     def test_validation_preserves_logprobs(self):
@@ -105,9 +110,9 @@ class TestDeterministicSampling:
             max_tokens=15,
         )
         result = generate_and_validate(experiment)
-        
+
         assert len(result.inference_result.results) == len(result.validation_result.results)
-        
+
         for inf_pos, val_pos in zip(result.inference_result.results, result.validation_result.results):
             assert inf_pos.token == val_pos.token
             inf_top_tokens = set(inf_pos.logprobs.keys())
@@ -122,7 +127,7 @@ class TestDeterministicSampling:
             ("Tell me a joke", 0.8),
             ("Be creative", 1.2),
         ]
-        
+
         for prompt, temp in prompts_and_temps:
             experiment = create_experiment_request(
                 prompt=prompt,
@@ -132,6 +137,7 @@ class TestDeterministicSampling:
             )
             result = generate_and_validate(experiment)
             assert result.inference_result.text == result.validation_result.text
+            assert verify_artifacts(result.inference_result, result.validation_result)
 
     def test_validation_with_long_sequences(self):
         experiment = create_experiment_request(
@@ -141,7 +147,8 @@ class TestDeterministicSampling:
             max_tokens=50,
         )
         result = generate_and_validate(experiment)
-        
+
         assert result.inference_result.text == result.validation_result.text
         assert len(result.inference_result.results) > 0
         assert len(result.validation_result.results) > 0
+        assert verify_artifacts(result.inference_result, result.validation_result)

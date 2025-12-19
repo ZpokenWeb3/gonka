@@ -63,6 +63,7 @@ def inference(
     model_info: ModelInfo,
     request_params: RequestParams,
     prompt: str,
+    inference_id: str,
 ) -> Dict[str, Any]:
     url = f"{model_info.url}/v1/chat/completions"
     payload = {
@@ -78,8 +79,9 @@ def inference(
         "skip_special_tokens": False,
         "repetition_penalty": 1.2,
         "chat_template": "{% for message in messages %}{{ message.content }}{% endfor %}",
+        "inference_id": inference_id,
     }
-    
+
     response = requests.post(url, json=payload)
     if response.status_code != 200:
         raise RuntimeError(f"Inference API request failed with status {response.status_code} {response.text}")
@@ -90,8 +92,9 @@ def validation(
     model_info: ModelInfo,
     request_params: RequestParams,
     prompt: str,
-    enforced_str: Optional[str] = None,
-    enforced_tokens: Optional[EnforcedTokens] = None,
+    inference_id: str,
+    run_seed: int,
+    enforced_tokens: EnforcedTokens,
 ) -> Dict[str, Any]:
     url = f"{model_info.url}/v1/chat/completions"
     payload = {
@@ -107,17 +110,15 @@ def validation(
         "skip_special_tokens": False,
         "repetition_penalty": 1.2,
         "chat_template": "{% for message in messages %}{{ message.content }}{% endfor %}",
+        "inference_id": inference_id,
+        "run_seed": run_seed,
+        "enforced_tokens": enforced_tokens.model_dump(),
     }
-    
-    if enforced_str:
-        payload["enforced_str"] = enforced_str
-    if enforced_tokens:
-        payload["enforced_tokens"] = enforced_tokens.dict()
 
     response = requests.post(url, json=payload)
     if response.status_code != 200:
         raise RuntimeError(f"Validation API request failed with status {response.status_code} {response.text}\n(enforced_tokens: {enforced_tokens})\n(payload: {payload})")
-    
+
     return response.json()
 
 
@@ -139,33 +140,64 @@ def _extract_enforced_tokens(resp) -> EnforcedTokens:
     return EnforcedTokens.from_content(resp["choices"][0]["logprobs"]["content"])
 
 
+def _extract_run_seed(resp) -> int:
+    return resp["choices"][0]["run_seed"]
+
+
+def _generate_inference_id() -> str:
+    import uuid
+    return str(uuid.uuid4())
+
+
+def verify_artifacts(inf_result: Result, val_result: Result) -> bool:
+    if len(inf_result.results) != len(val_result.results):
+        return False
+
+    for i, (inf_pos, val_pos) in enumerate(zip(inf_result.results, val_result.results)):
+        if inf_pos.token != val_pos.token:
+            logger.debug(f"Position {i}: token mismatch {inf_pos.token} vs {val_pos.token}")
+            return False
+
+        inf_top_tokens = set(inf_pos.logprobs.keys())
+        val_top_tokens = set(val_pos.logprobs.keys())
+        if not inf_top_tokens.issubset(val_top_tokens):
+            logger.debug(f"Position {i}: top tokens mismatch")
+            return False
+
+    return True
+
+
 def generate_and_validate(
     experiment_request: ExperimentRequest
 ) -> ValidationItem:
+    inference_id = _generate_inference_id()
+
     inference_resp = inference(
         experiment_request.inference_model,
         experiment_request.request_params,
         experiment_request.prompt,
+        inference_id=inference_id,
     )
     inference_result = _extract_logprobs(inference_resp)
     enforced_tokens = _extract_enforced_tokens(inference_resp)
+    run_seed = _extract_run_seed(inference_resp)
+
     validation_resp = validation(
         experiment_request.validation_model,
         experiment_request.request_params,
         experiment_request.prompt,
-        # enforced_str=inference_result.text,
-        enforced_tokens=enforced_tokens
+        inference_id=inference_id,
+        run_seed=run_seed,
+        enforced_tokens=enforced_tokens,
     )
     validation_result = _extract_logprobs(validation_resp)
-    if validation_result.text != inference_result.text:
-        print(
-            f"text sequences don't match\n" +
-            f"inference:\n {inference_result.text}\n" +
-            f"{'-'*10}\n" +
-            f"validation:\n {validation_result.text}\n" +
-            f"{'-'*100}"
+
+    if not verify_artifacts(inference_result, validation_result):
+        logger.error(
+            f"Artifact verification failed\n"
+            f"inference: {[r.token for r in inference_result.results]}\n"
+            f"validation: {[r.token for r in validation_result.results]}"
         )
-        exit(-1)
 
     return experiment_request.to_result(
         inference_result,
