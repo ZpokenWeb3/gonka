@@ -29,7 +29,7 @@ class ModelInfo(BaseModel):
 class RequestParams(BaseModel):
     max_tokens: int
     temperature: float
-    seed: int
+    seed: Union[int, None] = None
     additional_params: Dict[str, Union[str, int, float]] = Field(default_factory=dict)
     top_logprobs: int = 3
 

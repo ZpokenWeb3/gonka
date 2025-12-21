@@ -1,21 +1,28 @@
 import os
 import sys
 from pathlib import Path
+from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "benchmarks" / "src"))
 
-from validation.utils import generate_and_validate, verify_artifacts
+from validation.utils import generate_and_validate, verify_artifacts, generate_and_validate_from_file
 from validation.data import ModelInfo, RequestParams, ExperimentRequest
 
 
-VLLM_URL = os.getenv("VLLM_URL", "http://195.189.60.154:8000")
+VLLM_URL = os.getenv("VLLM_URL", "http://localhost:8000")
 MODEL = os.getenv("MODEL", "facebook/opt-125m")
+INFERENCE_RESPONSES_DIR = Path(__file__).parent / "inference_responses"
+
+
+def get_response_file(test_name: str) -> str:
+    INFERENCE_RESPONSES_DIR.mkdir(exist_ok=True)
+    return str(INFERENCE_RESPONSES_DIR / f"{test_name}.json")
 
 
 def create_experiment_request(
     prompt: str,
     temperature: float = 0.7,
-    seed: int = 42,
+    seed: Optional[int] = 42,
     max_tokens: int = 30,
     top_logprobs: int = 5,
 ) -> ExperimentRequest:
@@ -37,57 +44,62 @@ def create_experiment_request(
 class TestDeterministicSampling:
 
     def test_greedy_sampling(self):
+        resp_file = get_response_file("greedy_sampling")
         experiment = create_experiment_request(
             prompt="What is the capital of France?",
             temperature=0.0,
             seed=42,
             max_tokens=20,
         )
-        result = generate_and_validate(experiment)
+        result = generate_and_validate(experiment, save_inference_resp_to=resp_file)
         assert result.inference_result.text == result.validation_result.text
         assert verify_artifacts(result.inference_result, result.validation_result)
 
     def test_temperature_sampling_low(self):
+        resp_file = get_response_file("temperature_sampling_low")
         experiment = create_experiment_request(
             prompt="Write a short sentence about the weather.",
             temperature=0.3,
             seed=123,
             max_tokens=25,
         )
-        result = generate_and_validate(experiment)
+        result = generate_and_validate(experiment, save_inference_resp_to=resp_file)
         assert result.inference_result.text == result.validation_result.text
         assert verify_artifacts(result.inference_result, result.validation_result)
 
     def test_temperature_sampling_medium(self):
+        resp_file = get_response_file("temperature_sampling_medium")
         experiment = create_experiment_request(
             prompt="Tell me something interesting.",
             temperature=0.7,
             seed=456,
             max_tokens=30,
         )
-        result = generate_and_validate(experiment)
+        result = generate_and_validate(experiment, save_inference_resp_to=resp_file)
         assert result.inference_result.text == result.validation_result.text
         assert verify_artifacts(result.inference_result, result.validation_result)
 
     def test_temperature_sampling_high(self):
+        resp_file = get_response_file("temperature_sampling_high")
         experiment = create_experiment_request(
             prompt="Generate a creative story opening.",
             temperature=1.0,
             seed=789,
             max_tokens=35,
         )
-        result = generate_and_validate(experiment)
+        result = generate_and_validate(experiment, save_inference_resp_to=resp_file)
         assert result.inference_result.text == result.validation_result.text
         assert verify_artifacts(result.inference_result, result.validation_result)
 
     def test_inference_and_validation_match(self):
+        resp_file = get_response_file("inference_and_validation_match")
         experiment = create_experiment_request(
             prompt="Hello world",
             seed=42,
             temperature=0.7,
             max_tokens=20
         )
-        result = generate_and_validate(experiment)
+        result = generate_and_validate(experiment, save_inference_resp_to=resp_file)
 
         assert result.inference_result.text == result.validation_result.text
         assert verify_artifacts(result.inference_result, result.validation_result)
@@ -97,19 +109,20 @@ class TestDeterministicSampling:
         experiment1 = create_experiment_request(prompt=prompt, seed=111, temperature=0.7, max_tokens=20)
         experiment2 = create_experiment_request(prompt=prompt, seed=222, temperature=0.7, max_tokens=20)
 
-        result1 = generate_and_validate(experiment1)
-        result2 = generate_and_validate(experiment2)
+        result1 = generate_and_validate(experiment1, save_inference_resp_to=get_response_file("different_seeds_1"))
+        result2 = generate_and_validate(experiment2, save_inference_resp_to=get_response_file("different_seeds_2"))
 
         assert result1.inference_result.text != result2.inference_result.text
 
     def test_validation_preserves_logprobs(self):
+        resp_file = get_response_file("validation_preserves_logprobs_main")
         experiment = create_experiment_request(
             prompt="Explain quantum computing",
             temperature=0.5,
             seed=999,
             max_tokens=15,
         )
-        result = generate_and_validate(experiment)
+        result = generate_and_validate(experiment, save_inference_resp_to=resp_file)
 
         assert len(result.inference_result.results) == len(result.validation_result.results)
 
@@ -128,27 +141,163 @@ class TestDeterministicSampling:
             ("Be creative", 1.2),
         ]
 
-        for prompt, temp in prompts_and_temps:
+        for i, (prompt, temp) in enumerate(prompts_and_temps):
             experiment = create_experiment_request(
                 prompt=prompt,
                 temperature=temp,
                 seed=42,
                 max_tokens=20,
             )
-            result = generate_and_validate(experiment)
+            result = generate_and_validate(experiment, save_inference_resp_to=get_response_file(f"different_temperature_main_{i}"))
             assert result.inference_result.text == result.validation_result.text
             assert verify_artifacts(result.inference_result, result.validation_result)
 
     def test_validation_with_long_sequences(self):
+        resp_file = get_response_file("validation_with_long_sequences_main")
         experiment = create_experiment_request(
             prompt="Write a paragraph about machine learning.",
             temperature=0.6,
             seed=555,
             max_tokens=50,
         )
-        result = generate_and_validate(experiment)
+        result = generate_and_validate(experiment, save_inference_resp_to=resp_file)
 
         assert result.inference_result.text == result.validation_result.text
         assert len(result.inference_result.results) > 0
         assert len(result.validation_result.results) > 0
         assert verify_artifacts(result.inference_result, result.validation_result)
+
+    def test_greedy_sampling_from_file(self):
+        resp_file = get_response_file("greedy_sampling")
+        experiment = create_experiment_request(
+            prompt="What is the capital of France?",
+            temperature=0.0,
+            seed=42,
+            max_tokens=20,
+        )
+        result_from_file = generate_and_validate_from_file(experiment, resp_file)
+        assert result_from_file.inference_result.text == result_from_file.validation_result.text
+        assert verify_artifacts(result_from_file.inference_result, result_from_file.validation_result)
+
+    def test_temperature_sampling_low_from_file(self):
+        resp_file = get_response_file("temperature_sampling_low")
+        experiment = create_experiment_request(
+            prompt="Write a short sentence about the weather.",
+            temperature=0.3,
+            seed=123,
+            max_tokens=25,
+        )
+        result_from_file = generate_and_validate_from_file(experiment, resp_file)
+        assert result_from_file.inference_result.text == result_from_file.validation_result.text
+        assert verify_artifacts(result_from_file.inference_result, result_from_file.validation_result)
+
+    def test_temperature_sampling_medium_from_file(self):
+        resp_file = get_response_file("temperature_sampling_medium")
+        experiment = create_experiment_request(
+            prompt="Tell me something interesting.",
+            temperature=0.7,
+            seed=456,
+            max_tokens=30,
+        )
+        result_from_file = generate_and_validate_from_file(experiment, resp_file)
+        assert result_from_file.inference_result.text == result_from_file.validation_result.text
+        assert verify_artifacts(result_from_file.inference_result, result_from_file.validation_result)
+
+    def test_temperature_sampling_high_from_file(self):
+        resp_file = get_response_file("temperature_sampling_high")
+        experiment = create_experiment_request(
+            prompt="Generate a creative story opening.",
+            temperature=1.0,
+            seed=789,
+            max_tokens=35,
+        )
+        result_from_file = generate_and_validate_from_file(experiment, resp_file)
+        assert result_from_file.inference_result.text == result_from_file.validation_result.text
+        assert verify_artifacts(result_from_file.inference_result, result_from_file.validation_result)
+
+    def test_inference_and_validation_match_from_file(self):
+        resp_file = get_response_file("inference_and_validation_match")
+        experiment = create_experiment_request(
+            prompt="Hello world",
+            seed=42,
+            temperature=0.7,
+            max_tokens=20
+        )
+        result_from_file = generate_and_validate_from_file(experiment, resp_file)
+        assert result_from_file.inference_result.text == result_from_file.validation_result.text
+        assert verify_artifacts(result_from_file.inference_result, result_from_file.validation_result)
+
+    def test_validation_preserves_logprobs_from_file(self):
+        resp_file = get_response_file("validation_preserves_logprobs")
+        experiment = create_experiment_request(
+            prompt="Explain quantum computing",
+            temperature=0.5,
+            seed=999,
+            max_tokens=15,
+        )
+        result_from_file = generate_and_validate_from_file(experiment, resp_file)
+        assert len(result_from_file.inference_result.results) == len(result_from_file.validation_result.results)
+        for inf_pos, val_pos in zip(result_from_file.inference_result.results, result_from_file.validation_result.results):
+            assert inf_pos.token == val_pos.token
+            inf_top_tokens = set(inf_pos.logprobs.keys())
+            val_top_tokens = set(val_pos.logprobs.keys())
+            assert inf_top_tokens.issubset(val_top_tokens)
+
+    def test_different_temperature_settings_from_file(self):
+        prompts_and_temps = [
+            ("Count to five", 0.0),
+            ("Describe the sky", 0.2),
+            ("What is AI?", 0.5),
+            ("Tell me a joke", 0.8),
+            ("Be creative", 1.2),
+        ]
+
+        for i, (prompt, temp) in enumerate(prompts_and_temps):
+            resp_file = get_response_file(f"different_temperature_settings_{i}")
+            experiment = create_experiment_request(
+                prompt=prompt,
+                temperature=temp,
+                seed=42,
+                max_tokens=20,
+            )
+            result_from_file = generate_and_validate_from_file(experiment, resp_file)
+            assert result_from_file.inference_result.text == result_from_file.validation_result.text
+            assert verify_artifacts(result_from_file.inference_result, result_from_file.validation_result)
+
+    def test_validation_with_long_sequences_from_file(self):
+        resp_file = get_response_file("validation_with_long_sequences")
+        experiment = create_experiment_request(
+            prompt="Write a paragraph about machine learning.",
+            temperature=0.6,
+            seed=555,
+            max_tokens=50,
+        )
+        result_from_file = generate_and_validate_from_file(experiment, resp_file)
+        assert result_from_file.inference_result.text == result_from_file.validation_result.text
+        assert len(result_from_file.inference_result.results) > 0
+        assert len(result_from_file.validation_result.results) > 0
+        assert verify_artifacts(result_from_file.inference_result, result_from_file.validation_result)
+
+    def test_random_sampling(self):
+        resp_file = get_response_file("random_sampling")
+        experiment = create_experiment_request(
+            prompt="Generate a random response.",
+            temperature=0.8,
+            seed=None,
+            max_tokens=25,
+        )
+        result = generate_and_validate(experiment, save_inference_resp_to=resp_file)
+        assert result.inference_result.text == result.validation_result.text
+        assert verify_artifacts(result.inference_result, result.validation_result)
+
+    def test_random_sampling_from_file(self):
+        resp_file = get_response_file("random_sampling")
+        experiment = create_experiment_request(
+            prompt="Generate a random response.",
+            temperature=0.8,
+            seed=None,
+            max_tokens=25,
+        )
+        result_from_file = generate_and_validate_from_file(experiment, resp_file)
+        assert result_from_file.inference_result.text == result_from_file.validation_result.text
+        assert verify_artifacts(result_from_file.inference_result, result_from_file.validation_result)
