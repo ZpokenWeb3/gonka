@@ -78,6 +78,7 @@ def inference(
         "logprobs": True,
         "n": 1,
         "top_logprobs": request_params.top_logprobs,
+        "top_k": request_params.top_k,
         "skip_special_tokens": False,
         "repetition_penalty": 1.2,
         "chat_template": "{% for message in messages %}{{ message.content }}{% endfor %}",
@@ -107,6 +108,7 @@ def validation(
         "stream": False,
         "logprobs": True,
         "top_logprobs": request_params.top_logprobs,
+        "top_k": request_params.top_k,
         "n": 1,
         "skip_special_tokens": False,
         "repetition_penalty": 1.2,
@@ -173,7 +175,7 @@ def verify_artifacts(inf_result: Result, val_result: Result, prob_tolerance: flo
             val_logprob = val_pos.logprobs[token]
             prob_diff = abs(inf_logprob - val_logprob)
 
-            if prob_diff != prob_tolerance:
+            if prob_diff > prob_tolerance:
                 logger.error(
                     f"Position {i}, token '{token}': probability mismatch. "
                     f"Inference: {inf_logprob:.6f}, Validation: {val_logprob:.6f}, "
@@ -191,9 +193,11 @@ def verify_artifacts(inf_result: Result, val_result: Result, prob_tolerance: flo
 
 def generate_and_validate(
     experiment_request: ExperimentRequest,
-    save_inference_resp_to: Optional[str] = None
+    save_inference_resp_to: Optional[str] = None,
+    inference_id: Optional[str] = None,
 ) -> ValidationItem:
-    inference_id = _generate_inference_id()
+    if inference_id is None:
+        inference_id = _generate_inference_id()
 
     inference_resp = inference(
         experiment_request.inference_model,

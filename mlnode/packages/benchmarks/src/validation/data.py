@@ -32,6 +32,7 @@ class RequestParams(BaseModel):
     seed: Union[int, None] = None
     additional_params: Dict[str, Union[str, int, float]] = Field(default_factory=dict)
     top_logprobs: int = 3
+    top_k: int = -1
 
 
 class ValidationItem(BaseModel):
