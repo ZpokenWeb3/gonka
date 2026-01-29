@@ -58,7 +58,14 @@ type MlNodeReconciliationConfig struct {
 	LastTime        time.Time // Track last reconciliation time
 }
 
-// OnNewBlockDispatcher orchestrates processing of new block events
+type ParticipantURLSetter interface {
+	SetParticipantURLs(urls map[string]string)
+}
+
+type ParticipantQuerier interface {
+	Participant(ctx context.Context, req *types.QueryGetParticipantRequest, opts ...grpc.CallOption) (*types.QueryGetParticipantResponse, error)
+}
+
 type OnNewBlockDispatcher struct {
 	nodeBroker           *broker.Broker
 	pocOrchestrator      poc.Orchestrator
@@ -74,6 +81,8 @@ type OnNewBlockDispatcher struct {
 	treeManager          *propagation.TreeManager
 	propagationReceiver  *propagation.Receiver
 	propagationBundler   *propagation.Bundler
+	propagationTransport ParticipantURLSetter
+	participantQuerier   ParticipantQuerier
 }
 
 // StatusResponse matches the structure expected by getStatus function
@@ -169,10 +178,14 @@ func (d *OnNewBlockDispatcher) SetPropagationComponents(
 	treeManager *propagation.TreeManager,
 	receiver *propagation.Receiver,
 	bundler *propagation.Bundler,
+	transport ParticipantURLSetter,
+	participantQuerier ParticipantQuerier,
 ) {
 	d.treeManager = treeManager
 	d.propagationReceiver = receiver
 	d.propagationBundler = bundler
+	d.propagationTransport = transport
+	d.participantQuerier = participantQuerier
 }
 
 // ProcessNewBlock is the main entry point for processing new block events
@@ -366,6 +379,10 @@ func (d *OnNewBlockDispatcher) handlePhaseTransitions(epochState chainphase.Epoc
 					d.propagationBundler.SetTrees(trees)
 					logging.Info("Propagation trees updated successfully", types.PoC,
 						"epoch", epochContext.EpochIndex, "treeCount", len(trees))
+
+					if d.propagationTransport != nil && d.participantQuerier != nil {
+						d.populateParticipantURLs(trees)
+					}
 				}
 			}
 		}
@@ -523,6 +540,33 @@ func (d *OnNewBlockDispatcher) handlePhaseTransitions(epochState chainphase.Epoc
 				logging.Error("Failed to send inference up command", types.PoC, "error", err)
 			}
 		}
+	}
+}
+
+func (d *OnNewBlockDispatcher) populateParticipantURLs(trees []*propagation.Tree) {
+	seen := make(map[string]struct{})
+	for _, tree := range trees {
+		for _, addr := range tree.Shuffled {
+			seen[addr] = struct{}{}
+		}
+	}
+
+	urls := make(map[string]string, len(seen))
+	ctx := context.Background()
+	for addr := range seen {
+		resp, err := d.participantQuerier.Participant(ctx, &types.QueryGetParticipantRequest{Index: addr})
+		if err != nil {
+			logging.Debug("Failed to get participant URL", types.PoC, "address", addr, "error", err)
+			continue
+		}
+		if resp.Participant.InferenceUrl != "" {
+			urls[addr] = resp.Participant.InferenceUrl
+		}
+	}
+
+	if len(urls) > 0 {
+		d.propagationTransport.SetParticipantURLs(urls)
+		logging.Info("Propagation participant URLs populated", types.PoC, "count", len(urls))
 	}
 }
 

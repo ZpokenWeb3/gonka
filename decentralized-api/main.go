@@ -19,7 +19,6 @@ import (
 	"decentralized-api/poc"
 	"decentralized-api/poc/artifacts"
 	"decentralized-api/poc/propagation"
-	"encoding/base64"
 	"net"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -43,7 +42,14 @@ import (
 	"github.com/productscience/inference/x/inference/types"
 )
 
-// chainPubKeyProvider adapts the chain query client to implement propagation.PubKeyProvider
+type cosmosHeaderSigner struct {
+	client cosmosclient.CosmosMessageClient
+}
+
+func (s *cosmosHeaderSigner) Sign(msg []byte) ([]byte, error) {
+	return s.client.SignBytes(msg)
+}
+
 type chainPubKeyProvider struct {
 	queryClient types.QueryClient
 }
@@ -211,9 +217,10 @@ func main() {
 
 		propagationTransport.RegisterReceiver(participantInfo.GetAddress(), propagationReceiver)
 
-		dummyStore, _ := artifactStore.GetStore(0)
+		signer := &cosmosHeaderSigner{client: recorder}
 		propagationBundler = propagation.NewBundler(
-			dummyStore,
+			signer,
+			propagationCache,
 			bootstrapTrees,
 			propagationTransport,
 			participantInfo.GetAddress(),
@@ -250,7 +257,7 @@ func main() {
 	listener := event_listener.NewEventListener(config, pocOrchestrator, nodeBroker, validator, *recorder, trainingExecutor, chainPhaseTracker, cancel, blsManager)
 
 	if propConfig.Enabled && treeManager != nil {
-		listener.SetPropagationComponents(treeManager, propagationReceiver, propagationBundler)
+		listener.SetPropagationComponents(treeManager, propagationReceiver, propagationBundler, propagationTransport, recorder.NewInferenceQueryClient())
 		logging.Info("Propagation components wired to event listener", types.PoC)
 	}
 
@@ -285,23 +292,6 @@ func main() {
 	batchingCfg := config.GetTxBatchingConfig()
 	commitInterval := time.Duration(batchingCfg.PocCommitIntervalSeconds) * time.Second
 
-	// Get private key for signing bundles (if propagation enabled)
-	var privKey []byte
-	if propConfig.Enabled {
-		mlKeyConfig := config.GetConfig().MLNodeKeyConfig
-		if mlKeyConfig.WorkerPrivateKey != "" {
-			var err error
-			privKey, err = base64.StdEncoding.DecodeString(mlKeyConfig.WorkerPrivateKey)
-			if err != nil {
-				logging.Error("Failed to decode worker private key for propagation signing", types.PoC, "error", err)
-			} else {
-				logging.Info("Propagation bundle signing enabled with worker private key", types.PoC)
-			}
-		} else {
-			logging.Warn("Propagation bundle signing key unavailable", types.PoC, "reason", "worker private key not configured")
-		}
-	}
-
 	commitWorker := poc.NewCommitWorker(
 		artifactStore,
 		recorder,
@@ -310,7 +300,6 @@ func main() {
 		commitInterval,
 		propConfig.Enabled,
 		propagationBundler,
-		privKey,
 	)
 	defer commitWorker.Close()
 

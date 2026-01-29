@@ -144,17 +144,20 @@ func testPropagationDemo(t *testing.T, numParticipants int, storageFactory propa
 			t.Fatalf("failed to flush store for %s: %v", addr, err)
 		}
 
-		bundler := NewBundler(store, trees, sender, addr)
+		signer := &testKeySigner{key: privKeys[addr]}
+		bundler := NewBundler(signer, cache, trees, sender, addr)
 		bundlers[addr] = bundler
 	}
 
 	sender := trees[0].Shuffled[0]
 
-	if err := bundlers[sender].Publish(pocHeight, blockHash[:], sender, privKeys[sender]); err != nil {
+	senderCount := stores[sender].Count()
+	senderRoot := stores[sender].GetRoot()
+	if err := bundlers[sender].Publish(pocHeight, blockHash[:], sender, senderCount, senderRoot); err != nil {
 		t.Fatalf("failed to publish: %v", err)
 	}
 
-	bundleID := MakeBundleID(sender, pocHeight, stores[sender].GetRoot(), stores[sender].Count(), 1)
+	bundleID := MakeBundleID(sender, pocHeight, senderRoot, senderCount, 1)
 
 	receivedCount := 0
 	for _, addr := range participants {
@@ -172,9 +175,9 @@ func testPropagationDemo(t *testing.T, numParticipants int, storageFactory propa
 				addr, header.Participant, sender)
 		}
 
-		if header.Count != stores[sender].Count() {
+		if header.Count != senderCount {
 			t.Errorf("participant %s: wrong count in header: got %d, want %d",
-				addr, header.Count, stores[sender].Count())
+				addr, header.Count, senderCount)
 		}
 
 		receivedCount++
@@ -313,7 +316,8 @@ func testMultiPublisherPropagation(t *testing.T, numParticipants int, storageFac
 			t.Fatalf("failed to flush store for %s: %v", addr, err)
 		}
 
-		bundler := NewBundler(store, trees, sender, addr)
+		signer := &testKeySigner{key: privKeys[addr]}
+		bundler := NewBundler(signer, cache, trees, sender, addr)
 		bundlers[addr] = bundler
 	}
 
@@ -325,10 +329,12 @@ func testMultiPublisherPropagation(t *testing.T, numParticipants int, storageFac
 		if bundler == nil {
 			t.Fatalf("bundler missing for %s", publisher)
 		}
-		if err := bundler.Publish(pocHeight, blockHash[:], publisher, privKeys[publisher]); err != nil {
+		pubCount := stores[publisher].Count()
+		pubRoot := stores[publisher].GetRoot()
+		if err := bundler.Publish(pocHeight, blockHash[:], publisher, pubCount, pubRoot); err != nil {
 			t.Fatalf("failed to publish from %s: %v", publisher, err)
 		}
-		bundleIDs[i] = MakeBundleID(publisher, pocHeight, stores[publisher].GetRoot(), stores[publisher].Count(), 1)
+		bundleIDs[i] = MakeBundleID(publisher, pocHeight, pubRoot, pubCount, 1)
 	}
 
 	actualReceipts := 0

@@ -43,11 +43,8 @@ type CommitWorker struct {
 
 	propagationEnabled bool
 	bundler            *propagation.Bundler
-	privKey            []byte
 }
 
-// NewCommitWorker creates and starts a new commit worker.
-// The worker runs until Close() is called.
 func NewCommitWorker(
 	store *artifacts.ManagedArtifactStore,
 	recorder cosmosclient.CosmosMessageClient,
@@ -56,7 +53,6 @@ func NewCommitWorker(
 	interval time.Duration,
 	propagationEnabled bool,
 	bundler *propagation.Bundler,
-	privKey []byte,
 ) *CommitWorker {
 	w := &CommitWorker{
 		store:              store,
@@ -69,7 +65,6 @@ func NewCommitWorker(
 		lastCommitted:      make(map[int64]commitState),
 		propagationEnabled: propagationEnabled,
 		bundler:            bundler,
-		privKey:            privKey,
 	}
 
 	// Start flush - always on (same interval as commits)
@@ -174,7 +169,7 @@ func (w *CommitWorker) maybeSubmitCommit(pocHeight int64) {
 		epochState := w.tracker.GetCurrentEpochState()
 		if epochState != nil && epochState.IsSynced {
 			blockHash := []byte(fmt.Sprintf("%d", pocHeight))
-			if err := w.bundler.Publish(pocHeight, blockHash, w.participantAddress, w.privKey); err != nil {
+			if err := w.bundler.Publish(pocHeight, blockHash, w.participantAddress, count, rootHash); err != nil {
 				logging.Warn("CommitWorker: propagation publish failed", types.PoC,
 					"pocHeight", pocHeight, "error", err)
 			} else {

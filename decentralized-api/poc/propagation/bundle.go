@@ -36,6 +36,10 @@ func MakeBundleID(participant string, pocHeight int64, rootHash []byte, count ui
 	return sha256.Sum256(h.Sum(nil))
 }
 
+type HeaderSigner interface {
+	Sign(msg []byte) ([]byte, error)
+}
+
 func SignHeader(h BundleHeader, privKey []byte) ([]byte, error) {
 	if len(privKey) != 32 {
 		return nil, errors.New("invalid private key length")
@@ -43,6 +47,10 @@ func SignHeader(h BundleHeader, privKey []byte) ([]byte, error) {
 	key := &secp256k1.PrivKey{Key: privKey}
 	msg := headerSigningBytes(h)
 	return key.Sign(msg)
+}
+
+func SignHeaderWith(h BundleHeader, signer HeaderSigner) ([]byte, error) {
+	return signer.Sign(headerSigningBytes(h))
 }
 
 func VerifyHeader(h BundleHeader, hexPubKey string) error {

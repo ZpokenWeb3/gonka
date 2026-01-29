@@ -1,36 +1,35 @@
 package propagation
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
 
 	"decentralized-api/logging"
-	"decentralized-api/poc/artifacts"
 
 	"github.com/productscience/inference/x/inference/types"
 )
 
 type Bundler struct {
-	store  *artifacts.ArtifactStore
+	signer HeaderSigner
+	cache  *Cache
 	trees  []*Tree
 	sender Sender
 	myAddr string
 }
 
-func NewBundler(store *artifacts.ArtifactStore, trees []*Tree, sender Sender, myAddr string) *Bundler {
+func NewBundler(signer HeaderSigner, cache *Cache, trees []*Tree, sender Sender, myAddr string) *Bundler {
 	return &Bundler{
-		store:  store,
+		signer: signer,
+		cache:  cache,
 		trees:  trees,
 		sender: sender,
 		myAddr: myAddr,
 	}
 }
 
-func (b *Bundler) Publish(pocHeight int64, blockHash []byte, participant string, privKey []byte) error {
-	count := b.store.Count()
-	rootHash := b.store.GetRoot()
-
+func (b *Bundler) Publish(pocHeight int64, blockHash []byte, participant string, count uint32, rootHash []byte) error {
 	if count == 0 || rootHash == nil {
 		logging.Debug("Bundler: no artifacts to publish", types.PoC,
 			"pocHeight", pocHeight, "participant", participant)
@@ -49,11 +48,17 @@ func (b *Bundler) Publish(pocHeight int64, blockHash []byte, participant string,
 		CreatedAt:    time.Now().Unix(),
 	}
 
-	sig, err := SignHeader(header, privKey)
+	sig, err := SignHeaderWith(header, b.signer)
 	if err != nil {
 		return fmt.Errorf("sign header: %w", err)
 	}
 	header.Signature = sig
+
+	if b.cache != nil {
+		if err := b.cache.StoreHeader(context.Background(), header); err != nil {
+			logging.Warn("Bundler: failed to cache own header", types.PoC, "error", err)
+		}
+	}
 
 	logging.Info("Bundler: publishing commit metadata", types.PoC,
 		"pocHeight", pocHeight, "participant", participant,
