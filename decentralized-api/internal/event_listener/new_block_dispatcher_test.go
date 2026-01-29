@@ -1,14 +1,17 @@
 package event_listener
 
 import (
+	"context"
 	"decentralized-api/chainphase"
-	"github.com/productscience/inference/x/inference/types"
+	"decentralized-api/poc/propagation"
 	"testing"
 	"time"
 
 	"decentralized-api/internal/event_listener/chainevents"
 
+	"github.com/productscience/inference/x/inference/types"
 	"github.com/stretchr/testify/assert"
+	"google.golang.org/grpc"
 )
 
 func TestOnNewBlockDispatcher_ShouldTriggerReconciliation(t *testing.T) {
@@ -125,4 +128,74 @@ func TestParseNewBlockInfo(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, int64(12345), blockInfo.Height)
 	assert.Equal(t, "ABCDEF123456", blockInfo.Hash)
+}
+
+type mockURLSetter struct {
+	urls map[string]string
+}
+
+func (m *mockURLSetter) SetParticipantURLs(urls map[string]string) {
+	m.urls = urls
+}
+
+type mockParticipantQuerier struct {
+	participants map[string]types.Participant
+}
+
+func (m *mockParticipantQuerier) Participant(_ context.Context, req *types.QueryGetParticipantRequest, _ ...grpc.CallOption) (*types.QueryGetParticipantResponse, error) {
+	p, ok := m.participants[req.Index]
+	if !ok {
+		return &types.QueryGetParticipantResponse{}, nil
+	}
+	return &types.QueryGetParticipantResponse{Participant: p}, nil
+}
+
+func TestPopulateParticipantURLs(t *testing.T) {
+	querier := &mockParticipantQuerier{
+		participants: map[string]types.Participant{
+			"addr1": {InferenceUrl: "http://node1:8080"},
+			"addr2": {InferenceUrl: "http://node2:8080"},
+			"addr3": {InferenceUrl: ""},
+		},
+	}
+	setter := &mockURLSetter{}
+
+	dispatcher := &OnNewBlockDispatcher{
+		propagationTransport: setter,
+		participantQuerier:   querier,
+	}
+
+	trees := []*propagation.Tree{
+		{Shuffled: []string{"addr1", "addr2", "addr3"}},
+		{Shuffled: []string{"addr2", "addr1"}},
+	}
+
+	dispatcher.populateParticipantURLs(trees)
+
+	assert.Equal(t, map[string]string{
+		"addr1": "http://node1:8080",
+		"addr2": "http://node2:8080",
+	}, setter.urls)
+}
+
+func TestPopulateParticipantURLs_NoURLs(t *testing.T) {
+	querier := &mockParticipantQuerier{
+		participants: map[string]types.Participant{
+			"addr1": {InferenceUrl: ""},
+		},
+	}
+	setter := &mockURLSetter{}
+
+	dispatcher := &OnNewBlockDispatcher{
+		propagationTransport: setter,
+		participantQuerier:   querier,
+	}
+
+	trees := []*propagation.Tree{
+		{Shuffled: []string{"addr1"}},
+	}
+
+	dispatcher.populateParticipantURLs(trees)
+
+	assert.Nil(t, setter.urls)
 }
