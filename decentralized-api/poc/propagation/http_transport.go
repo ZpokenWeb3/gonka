@@ -71,7 +71,7 @@ func (t *HTTPTransport) SendHeader(treeIdx int, to string, h BundleHeader) error
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url+"/api/v1/propagation/header", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, "POST", url+"/api/propagation/header", bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)
 	}

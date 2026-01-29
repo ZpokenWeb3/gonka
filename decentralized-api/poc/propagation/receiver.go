@@ -97,23 +97,24 @@ func (r *Receiver) OnHeader(h BundleHeader, treeIdx int) error {
 	r.processedHeaders[h.BundleID] = true
 	r.pendingHeaders[h.BundleID] = &h
 	r.lastHeaderTime[h.BundleID] = time.Now()
+	trees := r.trees
 	r.mu.Unlock()
 
 	logging.Info("Receiver: commit metadata verified and stored", types.PoC,
 		"receiver", r.myAddr, "publisher", h.Participant, "pocHeight", h.PocHeight,
 		"bundleID", fmt.Sprintf("%x", h.BundleID[:8]))
 
-	r.forwardHeader(h, treeIdx)
+	r.forwardHeader(h, treeIdx, trees)
 
 	return nil
 }
 
-func (r *Receiver) forwardHeader(h BundleHeader, treeIdx int) {
-	if treeIdx >= len(r.trees) {
+func (r *Receiver) forwardHeader(h BundleHeader, treeIdx int, trees []*Tree) {
+	if treeIdx >= len(trees) {
 		return
 	}
 
-	tree := r.trees[treeIdx]
+	tree := trees[treeIdx]
 	node := tree.GetNode(r.myAddr)
 	if node == nil {
 		return

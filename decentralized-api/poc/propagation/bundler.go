@@ -15,6 +15,7 @@ type Bundler struct {
 	signer HeaderSigner
 	cache  *Cache
 	trees  []*Tree
+	mu     sync.RWMutex
 	sender Sender
 	myAddr string
 }
@@ -76,9 +77,13 @@ func (b *Bundler) Publish(pocHeight int64, blockHash []byte, participant string,
 }
 
 func (b *Bundler) sendHeader(h BundleHeader) error {
+	b.mu.RLock()
+	trees := b.trees
+	b.mu.RUnlock()
+
 	var wg sync.WaitGroup
 
-	for _, tree := range b.trees {
+	for _, tree := range trees {
 		node := tree.GetNode(b.myAddr)
 		if node == nil {
 			continue
@@ -100,5 +105,7 @@ func (b *Bundler) sendHeader(h BundleHeader) error {
 }
 
 func (b *Bundler) SetTrees(trees []*Tree) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	b.trees = trees
 }
